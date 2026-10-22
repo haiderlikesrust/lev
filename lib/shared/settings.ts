@@ -26,6 +26,10 @@ export type Settings = {
   cooldownLosses: number; cooldownMinutes: number;
   levels: Record<Level, boolean>;
   disabledMachines: string[];
+  /** Share of incoming creator-fee USDC that is pool money; the rest is held for the owner's buyback. */
+  feePoolShareBps: number;
+  /** Slippage ceiling for the buyback swap. */
+  buybackSlippageBps: number;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -38,6 +42,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cooldownLosses: 5, cooldownMinutes: 10,
   levels: { half: true, full: true },
   disabledMachines: [],
+  feePoolShareBps: 8_500, buybackSlippageBps: 100,
 };
 
 const nonNegative = z.number().finite().min(0);
@@ -51,4 +56,5 @@ export const settingsSchema = z.object({
   cooldownLosses: z.number().int().min(0).max(100), cooldownMinutes: z.number().min(0).max(24 * 60),
   levels: z.object({ half: z.boolean(), full: z.boolean() }),
   disabledMachines: z.array(z.string().max(64)).max(64),
+  feePoolShareBps: z.number().int().min(0).max(10_000), buybackSlippageBps: z.number().int().min(10).max(1_000),
 }).refine(s => s.minEdgeBps <= s.edgeBps, { message: 'The lower edge cannot be above the launch edge.' });

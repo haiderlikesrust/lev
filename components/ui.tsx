@@ -17,7 +17,27 @@ export function Locked({ children, title }: { children?: ReactNode; title?: stri
 }
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-3xl border border-line bg-white p-5 sm:p-6 ${className}`}>{children}</div>;
+  return <div className={`rounded-3xl border border-line bg-white p-5 shadow-card sm:p-6 ${className}`}>{children}</div>;
+}
+
+/** A section heading: pixel kicker, display title, optional lede and action. */
+export function SectionHead({ kicker, title, lede, action }: { kicker: string; title: ReactNode; lede?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+      <div className="max-w-2xl">
+        <div className="font-pixel text-[11px] uppercase tracking-wider text-poke-red">{kicker}</div>
+        <h2 className="mt-1.5 text-2xl font-bold sm:text-3xl">{title}</h2>
+        {lede && <p className="mt-2 text-muted">{lede}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/** A small round icon badge. */
+export function IconBadge({ children, tone = 'red' }: { children: ReactNode; tone?: 'red' | 'blue' | 'yellow' | 'navy' | 'green' }) {
+  const tones = { red: 'bg-poke-red/10 text-poke-red', blue: 'bg-poke-blue/10 text-poke-blue', yellow: 'bg-poke-yellow/25 text-poke-yellow-dark', navy: 'bg-ink/8 text-ink', green: 'bg-uncommon/12 text-uncommon' };
+  return <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${tones[tone]}`}>{children}</span>;
 }
 
 export function Label({ children, className = '' }: { children: ReactNode; className?: string }) {
@@ -74,6 +94,7 @@ export function rarityColor(rarity: string | null | undefined) {
 export function TxLink({ label, signature, practice, cluster }: { label: string; signature?: string | null; practice: boolean; cluster?: string }) {
   if (!signature) return null;
   const short = `${signature.slice(0, 6)}…`;
-  if (practice) return <span className="text-xs text-muted">{label} <span className="font-mono">{short}</span></span>;
+  // Practice signatures are simulated, so there is nothing on Solscan to link to.
+  if (practice) return <span className="cursor-help text-xs text-muted underline decoration-dotted underline-offset-2" title="Simulated in practice mode. On mainnet this links to the transaction on Solscan.">{label} <span className="font-mono">{short}</span></span>;
   return <ExternalLink href={`https://solscan.io/tx/${signature}${cluster ? `?cluster=${cluster}` : ''}`}>{label}</ExternalLink>;
 }

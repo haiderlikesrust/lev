@@ -1,6 +1,7 @@
 import { PublicKey } from '@solana/web3.js';
 import { config } from './config';
-import { audit, migrate, openDatabase, record, Serial, type Database } from './db';
+import { atomic, audit, migrate, openDatabase, record, Serial, type Database } from './db';
+import { Burns } from './burns';
 import { Jobs } from './jobs';
 import { Chain, connection } from './chain';
 import { loadSigner } from './signer';
@@ -19,7 +20,7 @@ import type { PackProvider, Solana } from './ports';
 
 export type Services = {
   db: Database; jobs: Jobs; solana: Solana; packs: PackProvider; settings: SettingsStore; pool: LevPool; limits: Limits;
-  collector: Collector; orders: Orders; serial: Serial;
+  collector: Collector; orders: Orders; burns: Burns; serial: Serial;
   /** Practice mode only: the in-memory chain, for the practice helpers. */
   practice: MockSolana | null;
 };
@@ -47,7 +48,7 @@ export async function createServices(options: { database?: Database; practice?: 
   }
   const pool = new LevPool(db, solana, settings), limits = new Limits(db, settings), collector = new Collector(db, packs);
   const orders = new Orders(db, jobs, solana, packs, pool, limits, settings, collector);
-  return { db, jobs, solana, packs, settings, pool, limits, collector, orders, serial: new Serial(), practice };
+  return { db, jobs, solana, packs, settings, pool, limits, collector, orders, burns: new Burns(db, solana, settings, pool), serial: new Serial(), practice };
 }
 
 /** First run: machine configs, then pull data (the saved sample in practice mode), then a calibration. */
@@ -59,12 +60,19 @@ export async function bootstrap(s: Services) {
   if (!rows.length || Date.now() - Math.min(...rows.map(r => r.computedAt)) > 24 * 3_600_000) await runCalibration(s.db, s.collector, s.settings.current);
 }
 
-/** Indexes Pullback's fee-split transfers into LEV_POOL. */
+/**
+ * Indexes creator-fee USDC arriving in LEV_POOL and splits it on arrival: `feePoolShareBps` becomes pool
+ * money, the rest is held (still in LEV_POOL) for the owner's manual buyback and never funds bonuses.
+ */
 export async function indexFeeSplits(s: Services) {
   const last = (await s.db.query<{ signature: string }>('SELECT signature FROM fee_splits ORDER BY received_at DESC LIMIT 1')).rows[0]?.signature ?? null;
   for (const split of await s.solana.feeSplits(last)) {
-    await s.db.query('INSERT INTO fee_splits(signature,amount_micros,cycle,from_wallet,received_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(signature) DO NOTHING', [split.signature, split.amountMicros, split.cycle, split.from, split.receivedAt]);
-    await record(s.db, { id: `fee-split:${split.signature}`, bucket: 'pool', kind: 'fee-split', micros: split.amountMicros, signature: split.signature, ref: split.cycle });
+    const poolMicros = Math.floor(split.amountMicros * s.settings.current.feePoolShareBps / 10_000), heldMicros = split.amountMicros - poolMicros;
+    await atomic(s.db, async () => {
+      await s.db.query('INSERT INTO fee_splits(signature,amount_micros,pool_micros,cycle,from_wallet,received_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(signature) DO NOTHING', [split.signature, split.amountMicros, poolMicros, split.cycle, split.from, split.receivedAt]);
+      await record(s.db, { id: `fee-split:${split.signature}`, bucket: 'pool', kind: 'fee-split', micros: poolMicros, signature: split.signature, ref: split.cycle });
+      if (heldMicros > 0) await record(s.db, { id: `fee-held:${split.signature}`, bucket: 'burn', kind: 'fee-held', micros: heldMicros, signature: split.signature, ref: split.cycle });
+    });
     s.pool.invalidate();
   }
 }
@@ -103,6 +111,7 @@ export async function startWorker() {
     void tick();
   };
   loop('orders', config.live ? 3_000 : 1_500, () => s.orders.step(), true);
+  loop('burns', 10_000, () => s.burns.step(), true);
   loop('pulls', 120_000, () => s.collector.poll());
   loop('machines', 600_000, () => s.collector.refreshMachines());
   loop('calibration', 3_600_000, async () => {

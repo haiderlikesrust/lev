@@ -1,5 +1,5 @@
 /**
- * Read-only. Saves a sample of real CC pulls (values and tiers only, no wallets) and the machine configs
+ * Read-only. Saves a sample of real CC pulls (value, tier, card photo and name; no wallets) and the machine configs
  * to lib/server/fixtures/cc-sample.json. Practice mode draws its packs and its calibration from it, so the
  * practice multipliers match what real data gives.
  *
@@ -34,7 +34,7 @@ const snapshot = {
   source: 'GET /api/getWinners (slugs cc, jupiter) + GET /api/getAllWinners + GET /api/machines',
   machines: Object.fromEntries(machines.map(m => {
     const own = all.filter(p => p.code === m.code);
-    return [m.code, { config: m, from: Math.min(...own.map(p => p.pulledAt)), to: Math.max(...own.map(p => p.pulledAt)), pulls: own.map(p => [Math.round(p.valueMicros / 10_000) / 100, p.tier ?? 0]) }];
+    return [m.code, { config: m, from: Math.min(...own.map(p => p.pulledAt)), to: Math.max(...own.map(p => p.pulledAt)), pulls: own.map(p => [Math.round(p.valueMicros / 10_000) / 100, p.tier ?? 0, p.image ?? null, p.name ?? null]) }];
   })),
 };
 await mkdir('lib/server/fixtures', { recursive: true });

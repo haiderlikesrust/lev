@@ -37,7 +37,7 @@ export function HistoryView() {
         <p className="mt-1 text-muted">Every pack you opened with leverage and how it settled.</p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.5fr_1fr]">
         <Card className="!p-0 overflow-hidden">
           <div className="grid grid-cols-3 gap-4 border-b border-line px-5 py-5 sm:px-6">
             <Stat label="Packs" value={settled.length} />

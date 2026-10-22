@@ -114,6 +114,22 @@ describe('leverage packs (practice mode)', () => {
     expect((await play(ctx, 'full', 26)).status).toBe('complete');
   });
 
+  it('keeps 85% of creator fees as pool money and holds 15% until the owner buys back', async () => {
+    const ctx = await setup(10_000);
+    ctx.solana.feeSplit(1_000 * M);
+    await indexFeeSplits(ctx.s);
+    ctx.s.pool.invalidate();
+    expect(await ctx.s.pool.held()).toBe(150 * M);
+    expect(await ctx.s.pool.balance()).toBe(10_850 * M);
+    await ctx.s.burns.start('owner');
+    await expect(ctx.s.burns.start('owner')).rejects.toThrow(/already running/);
+    await ctx.s.burns.step();
+    ctx.s.pool.invalidate();
+    expect(await ctx.s.pool.held()).toBe(0);
+    expect(await ctx.s.pool.balance()).toBe(10_850 * M);
+    expect((await ctx.s.burns.list())[0].status).toBe('done');
+  });
+
   it('pauses new packs below the safety line', async () => {
     const ctx = await setup(500);
     await expect(ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'half', true)).rejects.toThrow(/safety line/);

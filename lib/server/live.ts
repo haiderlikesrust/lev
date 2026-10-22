@@ -10,6 +10,8 @@ import { sellBack } from './cc/sellback';
 import type { PurchaseStore, SaleStore } from './cc/store';
 import type { BuiltPayment, FeeSplit, PackProvider, PaymentState, Solana } from './ports';
 import type { MachineConfig } from '../shared/machines';
+import { swap } from './swap';
+import { ReviewRequired } from './jobs';
 
 /** Turns a failed payment broadcast into one plain sentence; the raw RPC message is kept as `cause` for the logs. */
 export function paymentFailure(message: string) {
@@ -109,15 +111,22 @@ export class LiveSolana implements Solana {
   }
 
   async feeSplits(after: string | null) {
-    if (!this.rpc || !this.poolAddress || !config.PULLBACK_POOL_WALLET) return [];
+    if (!this.rpc || !this.poolAddress || !config.FEE_SOURCE_WALLET) return [];
     const poolAta = getAssociatedTokenAddressSync(new PublicKey(config.USDC_MINT), new PublicKey(this.poolAddress)).toBase58();
     const signatures = (await this.rpc.getSignaturesForAddress(new PublicKey(poolAta), { limit: 100, ...(after ? { until: after } : {}) }, 'confirmed')).filter(s => !s.err);
     const found: FeeSplit[] = [];
     for (let i = 0; i < signatures.length; i += 20) {
       const txs = await this.rpc.getParsedTransactions(signatures.slice(i, i + 20).map(s => s.signature), { maxSupportedTransactionVersion: MAX_TX_VERSION, commitment: 'confirmed' });
-      for (const tx of txs) { const split = parseFeeSplit(tx, config.PULLBACK_POOL_WALLET, poolAta); if (split) found.push(split); }
+      for (const tx of txs) { const split = parseFeeSplit(tx, config.FEE_SOURCE_WALLET, poolAta); if (split) found.push(split); }
     }
     return found;
+  }
+
+  async buybackAndBurn(jobId: string, usdcMicros: number, slippageBps: number) {
+    if (!config.MEMECOIN_MINT) throw new ReviewRequired('Set MEMECOIN_MINT before buying back.');
+    const bought = await swap(this.pool, `${jobId}:swap`, config.USDC_MINT, config.MEMECOIN_MINT, BigInt(usdcMicros), slippageBps);
+    const burnSignature = await this.pool.burn(`${jobId}:burn`, config.MEMECOIN_MINT, bought.received);
+    return { tokens: bought.received, swapSignature: bought.signature, burnSignature };
   }
 }
 

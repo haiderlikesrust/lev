@@ -87,7 +87,7 @@ export async function migrate(db: Database) {
     `CREATE INDEX IF NOT EXISTS settlements_time ON settlements(settled_at DESC)`,
     `CREATE INDEX IF NOT EXISTS settlements_wallet ON settlements(wallet, settled_at DESC)`,
     `CREATE TABLE IF NOT EXISTS reservations (id TEXT PRIMARY KEY, micros BIGINT NOT NULL, created_at BIGINT NOT NULL, released_at BIGINT)`,
-    // Signed amounts: inflows positive, outflows negative. Buckets: pool (LEV_POOL), ops (LEV_OPS).
+    // Signed amounts: inflows positive, outflows negative. Buckets: pool (LEV_POOL), ops (LEV_OPS), burn (held in LEV_POOL for buybacks).
     `CREATE TABLE IF NOT EXISTS ledger (id TEXT PRIMARY KEY, bucket TEXT NOT NULL, kind TEXT NOT NULL, amount_micros BIGINT NOT NULL, signature TEXT, ref TEXT, created_at BIGINT NOT NULL, data JSONB NOT NULL DEFAULT '{}')`,
     `CREATE INDEX IF NOT EXISTS ledger_time ON ledger(bucket, created_at)`,
     `CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL, data JSONB NOT NULL, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL, error TEXT)`,
@@ -95,6 +95,10 @@ export async function migrate(db: Database) {
     // CC's public pull feed (getAllWinners / getWinners): the calibration's raw data.
     `CREATE TABLE IF NOT EXISTS cc_pulls (id TEXT PRIMARY KEY, code TEXT NOT NULL, value_micros BIGINT NOT NULL, tier INTEGER, slug TEXT, pulled_at BIGINT NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS cc_pulls_recent ON cc_pulls(code, pulled_at DESC)`,
+    // Card photo and name, for the leaderboard's biggest pulls.
+    `ALTER TABLE cc_pulls ADD COLUMN IF NOT EXISTS image TEXT`,
+    `ALTER TABLE cc_pulls ADD COLUMN IF NOT EXISTS name TEXT`,
+    `CREATE INDEX IF NOT EXISTS cc_pulls_value ON cc_pulls(pulled_at DESC, value_micros DESC)`,
     // CC's machine configs; `changed_at` moves when odds, tier ranges, buyback or price change, which restarts the calibration window.
     `CREATE TABLE IF NOT EXISTS machine_configs (code TEXT PRIMARY KEY, data JSONB NOT NULL, fingerprint TEXT NOT NULL, fetched_at BIGINT NOT NULL, changed_at BIGINT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS calibration (code TEXT NOT NULL, level TEXT NOT NULL, data JSONB NOT NULL, computed_at BIGINT NOT NULL, PRIMARY KEY(code, level))`,
@@ -102,6 +106,10 @@ export async function migrate(db: Database) {
     `CREATE TABLE IF NOT EXISTS player_limits (wallet TEXT PRIMARY KEY, daily_loss_limit_micros BIGINT, pending_limit_micros BIGINT, pending_at BIGINT, opted_in_at BIGINT)`,
     // USDC that reached LEV_POOL from Pullback's fee split (memo `fee-split:<cycle>`).
     `CREATE TABLE IF NOT EXISTS fee_splits (signature TEXT PRIMARY KEY, amount_micros BIGINT NOT NULL, cycle TEXT, from_wallet TEXT NOT NULL, received_at BIGINT NOT NULL)`,
+    // The part of each creator-fee transfer that is pool money (the rest is held for the owner's buyback).
+    `ALTER TABLE fee_splits ADD COLUMN IF NOT EXISTS pool_micros BIGINT`,
+    // Owner-started buybacks of our coin from the held share, advanced by the worker until burned.
+    `CREATE TABLE IF NOT EXISTS burns (id TEXT PRIMARY KEY, status TEXT NOT NULL, usdc_micros BIGINT NOT NULL, tokens TEXT, swap_signature TEXT, burn_signature TEXT, started_by TEXT NOT NULL, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL, error TEXT)`,
   ];
   for (const statement of statements) await db.query(statement);
 }
@@ -129,7 +137,7 @@ export async function atomic<T>(db: Database, fn: () => Promise<T>) {
 export const audit = (db: Database, event: string, data: unknown) => db.query('INSERT INTO audit(event,data,created_at) VALUES($1,$2,$3)', [event, JSON.stringify(data), Date.now()]);
 
 /** Records a ledger entry once; the id makes every financial event idempotent. */
-export const record = (db: Database, entry: { id: string; bucket: 'pool' | 'ops'; kind: string; micros: number; signature?: string | null; ref?: string | null; data?: unknown }) =>
+export const record = (db: Database, entry: { id: string; bucket: 'pool' | 'ops' | 'burn'; kind: string; micros: number; signature?: string | null; ref?: string | null; data?: unknown }) =>
   db.query('INSERT INTO ledger(id,bucket,kind,amount_micros,signature,ref,created_at,data) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO NOTHING',
     [entry.id, entry.bucket, entry.kind, Math.trunc(entry.micros), entry.signature ?? null, entry.ref ?? null, Date.now(), JSON.stringify(entry.data ?? {})]);
 

@@ -76,12 +76,18 @@ export class MockSolana implements Solana {
     const index = after ? this.splits.findIndex(s => s.signature === after) : -1;
     return this.splits.slice(index + 1);
   }
-  /** Practice helper: a Pullback fee split landing in LEV_POOL. */
+  /** Practice helper: a creator-fee transfer landing in LEV_POOL. */
   feeSplit(micros: number) {
     this.move(null, this.poolAddress, BigInt(micros));
-    const split = { signature: fakeSignature(), amountMicros: micros, cycle: `practice-${this.splits.length + 1}`, from: 'PULLBACK-POOL', receivedAt: Date.now() };
+    const split = { signature: fakeSignature(), amountMicros: micros, cycle: `practice-${this.splits.length + 1}`, from: 'FEE-SOURCE', receivedAt: Date.now() };
     this.splits.push(split);
     return split;
+  }
+  /** Practice buyback: the USDC leaves the pool and an imaginary 1,000 coins per dollar are burned. */
+  async buybackAndBurn(jobId: string, usdcMicros: number) {
+    const done = this.done.get(jobId);
+    if (!done) { this.move(this.poolAddress, CC_WALLET, BigInt(usdcMicros)); this.done.set(jobId, fakeSignature()); }
+    return { tokens: BigInt(usdcMicros) * 1_000n, swapSignature: this.done.get(jobId)!, burnSignature: this.done.get(jobId)! };
   }
 }
 
@@ -121,12 +127,13 @@ export class MockPacks implements PackProvider {
   async machines() { return this.liveData ? this.liveData.machines() : Object.values(loadSample().machines).map(m => m.config); }
   async openMachines() { return new Set((await this.machines()).map(m => m.code)); }
 
+  /** A real pull from the sample (value, tier, photo, name), or a forced value for tests. */
   private draw(seed: string, code: string) {
     const pulls = loadSample().machines[code]?.pulls ?? [];
     const forced = this.forceValues.shift();
-    if (forced !== undefined) return { value: forced, tier: 0 };
-    const [value, tier] = pulls[Math.floor(seeded(seed)() * pulls.length)] ?? [0, 0];
-    return { value, tier };
+    if (forced !== undefined) return { value: forced, tier: 0, image: null, name: null };
+    const [value, tier, image, name] = pulls[Math.floor(seeded(seed)() * pulls.length)] ?? [0, 0];
+    return { value, tier, image: image ?? null, name: name ?? null };
   }
 
   async buy(purchaseId: string, code: string, priceUsd: number): Promise<PurchaseResult> {
@@ -137,11 +144,11 @@ export class MockPacks implements PackProvider {
     if (this.machineLow.has(code) && !entry.calls) throw new Error('That pack is not available right now (Collector Crypt: Machine is low).');
     if (entry.calls++ < this.pendingCalls) return { state: 'pending', message: 'Collector Crypt is opening your pack.' };
     this.solana.move(this.solana.opsAddress, CC_WALLET, BigInt(priceUsd) * 1_000_000n);
-    const memo = `practice-${randomUUID()}`, signature = fakeSignature(), { value, tier } = this.draw(purchaseId, code), rand = seeded(`card:${purchaseId}`);
+    const memo = `practice-${randomUUID()}`, signature = fakeSignature(), { value, tier, image, name } = this.draw(purchaseId, code), rand = seeded(`card:${purchaseId}`);
     const pick = (list: string[]) => list[Math.floor(rand() * list.length)];
     const card: Card = {
       mint: new PublicKey(createHash('sha256').update(`mint:${purchaseId}`).digest()).toBase58(),
-      name: `${pick(NAMES)} · ${pick(SETS)} · PSA ${7 + Math.floor(rand() * 4)}`, image: null, insuredValueUsd: value,
+      name: name ?? `${pick(NAMES)} · ${pick(SETS)} · PSA ${7 + Math.floor(rand() * 4)}`, image, insuredValueUsd: value,
       rarity: tierOf(tier) ?? (value >= priceUsd * 2 ? 'epic' : value >= priceUsd ? 'uncommon' : 'common'), transferSignature: fakeSignature(),
     };
     entry.result = { state: 'complete', memo, signature, card };
@@ -170,8 +177,8 @@ export class MockPacks implements PackProvider {
     if (this.liveData) return this.liveData.recentPulls(code);
     const pulls = loadSample().machines[code]?.pulls ?? [], now = Date.now();
     return Array.from({ length: 3 }, (_, i) => {
-      const [value, tier] = pulls[Math.floor(Math.random() * pulls.length)] ?? [0, 0];
-      return { id: `practice:${randomUUID()}`, code, valueMicros: Math.round(value * 1_000_000), tier, slug: 'practice', pulledAt: now - i * 1000 };
+      const [value, tier, image, name] = pulls[Math.floor(Math.random() * pulls.length)] ?? [0, 0];
+      return { id: `practice:${randomUUID()}`, code, valueMicros: Math.round(value * 1_000_000), tier, slug: 'practice', pulledAt: now - i * 1000, image: image ?? null, name: name ?? null };
     });
   }
   async pullHistory(slug: string, cursor: string | null) { return this.liveData ? this.liveData.pullHistory(slug, cursor) : { pulls: [], nextCursor: null, hasMore: false }; }

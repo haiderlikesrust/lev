@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { Flame } from 'lucide-react';
 import { useSession } from '@/components/providers';
 import { Button, Card, Label } from '@/components/ui';
 import { apiPost, mult, timeAgo, usePoll } from '@/lib/client/api';
@@ -8,7 +9,8 @@ import { MACHINES } from '@/lib/shared/machines';
 import type { Settings } from '@/lib/shared/settings';
 import type { OrderView } from '@/lib/shared/types';
 
-type AdminData = { settings: Settings; review: (OrderView & { error: string | null })[]; audit: { event: string; data: { error?: string; id?: string } | null; at: number }[] };
+type Buyback = { heldUsd: number; totalHeldUsd: number; mintSet: boolean; burns: { id: string; status: string; usdcUsd: number; tokens: string | null; swapSignature: string | null; burnSignature: string | null; createdAt: number; error: string | null }[] };
+type AdminData = { settings: Settings; review: (OrderView & { error: string | null })[]; audit: { event: string; data: { error?: string; id?: string } | null; at: number }[]; buyback: Buyback };
 
 const FIELDS: { key: keyof Settings; label: string; hint: string }[] = [
   { key: 'edgeBps', label: 'Launch pool edge (bps)', hint: '500 = 5% of each pack price' },
@@ -24,6 +26,8 @@ const FIELDS: { key: keyof Settings; label: string; hint: string }[] = [
   { key: 'globalDailyUsd', label: 'Total volume / 24h ($)', hint: '0 = no limit' },
   { key: 'calibrationWindowDays', label: 'Calibration window (days)', hint: '' },
   { key: 'minSamples', label: 'Min pulls per machine', hint: '' },
+  { key: 'feePoolShareBps', label: 'Creator fees to pool (bps)', hint: '8500 = 85%; the rest is held for your buyback' },
+  { key: 'buybackSlippageBps', label: 'Buyback slippage (bps)', hint: '100 = 1%' },
 ];
 
 export function AdminView() {
@@ -40,7 +44,7 @@ export function AdminView() {
 
   const act = async (body: object) => {
     setBusy(true); setError(null);
-    try { const next = await apiPost<{ settings: Settings; review: AdminData['review'] }>('/api/admin', body); setData({ ...data, ...next }); setDraft(next.settings); }
+    try { const next = await apiPost<{ settings: Settings; review: AdminData['review']; buyback: Buyback }>('/api/admin', body); setData({ ...data, ...next }); setDraft(next.settings); }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
 
@@ -54,6 +58,36 @@ export function AdminView() {
         </div>
       </div>
       {error && <p className="text-sm text-loss">{error}</p>}
+
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <Label>Coin buyback &amp; burn · owner only</Label>
+            <p className="mt-1 max-w-xl text-sm text-muted">{100 - draft.feePoolShareBps / 100}% of incoming creator fees is held here instead of joining the pool. It only moves when you click: LEV_POOL swaps it into the coin on Jupiter and burns it.</p>
+          </div>
+          <div className="text-right">
+            <div className="text-3xl font-bold tabular-nums">${data.buyback.heldUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
+            <div className="text-xs text-muted">held now · ${data.buyback.totalHeldUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })} all time</div>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button variant="red" disabled={busy || data.buyback.heldUsd < 1 || !data.buyback.mintSet || data.buyback.burns.some(b => b.status === 'pending')}
+            onClick={() => { if (confirm(`Buy back and burn with $${data.buyback.heldUsd.toFixed(2)}?`)) void act({ action: 'buyback' }); }}>
+            <Flame size={16} /> Buy back &amp; burn
+          </Button>
+          {!data.buyback.mintSet && <span className="text-xs text-loss">Set MEMECOIN_MINT and JUPITER_API_KEY first.</span>}
+        </div>
+        {data.buyback.burns.length > 0 && (
+          <ul className="mt-4 divide-y divide-line text-sm">
+            {data.buyback.burns.map(b => (
+              <li key={b.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                <span className="tabular-nums">${b.usdcUsd.toFixed(2)} · <span className={b.status === 'done' ? 'text-ink' : b.status === 'review' ? 'text-loss' : 'text-muted'}>{b.status}</span>{b.tokens ? ` · ${Number(b.tokens).toLocaleString('en-US')} base units burned` : ''}</span>
+                <span className="flex items-center gap-3 text-xs text-muted">{timeAgo(b.createdAt)}{b.error && <span className="text-loss">{b.error}</span>}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <Card>
         <Label>Packs needing review ({data.review.length})</Label>

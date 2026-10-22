@@ -33,6 +33,8 @@ Open http://localhost:3000.
 
 On the Pool page, "simulate a fee split" adds play money to the pool, so you can watch levels unlock.
 
+**If pages keep reloading on their own,** a production build in `.next` is confusing the dev server. Stop `npm run dev`, delete `.next`, and start it again. Don't run `npm run build` while dev is running.
+
 **Other commands:**
 - `npm test`: 24 tests covering the math, the payout identity, every settlement path, refunds, cool-down, loss limits, unlocks and pause.
 - `npm run calibrate`: read-only; prints fair multipliers from CC's live pull history (`--sample` uses the saved sample, `--pool 50000` sets the pool size).
@@ -91,6 +93,14 @@ On today's one-day sample at a $50k pool, three levels are live: $25 Half 1.50x,
   - A 10-minute cool-down after 5 losses in a row.
   - The result screen offers no "open another" and no discounts.
 
+## Design versions
+
+The current design (v2) is a Pokédex-navy palette with Collector Crypt's own machine art and card photos, and a pack-opening sequence: the machine runs, then a burst, and the card flips. Design v1 (plain white) is saved as the git tag `design-v1`. To compare or go back:
+
+```bash
+git diff design-v1 -- app components
+```
+
 ## Layout
 
 | Path | What it does |
@@ -108,7 +118,7 @@ The worker runs inside the server process, started by `instrumentation.ts`, the 
 ## Before mainnet
 
 1. **Fill in `.env.local`** from `.env.example`, then run `npm run check` until it is all green.
-2. **Pullback fee split.** Add the 85/15 split to Pullback's fee cycle (ppp repo). After each swap, send `min(15% × USDC, target − LEV_POOL balance)` to `LEV_POOL` with memo `fee-split:<cycleId>`. This app indexes those transfers.
+2. **Creator fees.** Whatever claims the coin's creator fees and swaps $CARDS to USDC sends the USDC to `LEV_POOL` from `FEE_SOURCE_WALLET` with memo `fee-split:<cycleId>`. This app indexes those transfers; the pool's share (85% by default) is set in `/admin`.
 3. **Run on devnet first** against `https://dev-gacha.collectorcrypt.com`, through every settlement path. In particular, confirm the shape of CC's buyback transaction (`lib/server/cc/sellback.ts`).
 4. **Mainnet smoke test:** a tiny pool and one $25 Half-risk pack. Reconcile the ledger against the chain.
 

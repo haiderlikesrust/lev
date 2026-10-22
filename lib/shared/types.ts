@@ -30,7 +30,7 @@ export type SettlementView = {
 export type OfferView = Omit<Offer, 'capMicros' | 'maxLossMicros' | 'unlockAtMicros'> & { capUsd: number; maxLossUsd: number; unlockAtUsd: number };
 
 export type MachineView = {
-  code: string; name: string; priceUsd: number; buybackPct: number; open: boolean; disabled: boolean;
+  code: string; name: string; priceUsd: number; buybackPct: number; image: string | null; video: string | null; open: boolean; disabled: boolean;
   calibratedAt: number | null; pulls: number; offers: OfferView[];
 };
 
@@ -38,6 +38,22 @@ export type PoolView = {
   balanceUsd: number; reservedUsd: number; freeUsd: number; targetUsd: number; healthBps: number; pauseReason: string | null;
   totals: { bonusesUsd: number; floorsUsd: number; sellbackUsd: number; feeSplitsUsd: number; packs: number; wins: number; pushes: number; losses: number };
   feeSplits: { signature: string; amountUsd: number; cycle: string | null; receivedAt: number }[];
+};
+
+export type Period = '24h' | '7d' | 'all';
+
+export type LeaderboardView = {
+  period: Period;
+  totals: {
+    packs: number; wins: number; pushes: number; losses: number; volumeUsd: number; bonusesUsd: number; floorsUsd: number; sellbackUsd: number;
+    /** Bonuses, floors and the insured value of cards sent to players. */
+    returnedUsd: number; biggestBonusUsd: number; biggestPullUsd: number;
+  };
+  topBonuses: SettlementView[];
+  topPulls: SettlementView[];
+  machines: { code: string; name: string; image: string | null; packs: number; wins: number; pushes: number; losses: number; volumeUsd: number; bonusesUsd: number; sellbackUsd: number; floorsUsd: number;
+    /** Pool profit per dollar of packs (sellbacks − floors − bonuses) / volume. */
+    realizedEdge: number | null }[];
 };
 
 export type PlayerLimitView = {

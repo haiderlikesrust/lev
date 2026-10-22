@@ -38,15 +38,15 @@ export function PoolView() {
             <Card><Stat label="Bonuses paid" value={usdShort(pool.totals.bonusesUsd)} hint={`${pool.totals.wins} wins`} /></Card>
             <Card><Stat label="Sellback collected" value={usdShort(pool.totals.sellbackUsd)} hint={`${pool.totals.losses} losses`} /></Card>
             <Card><Stat label="Half-risk floors paid" value={usdShort(pool.totals.floorsUsd)} /></Card>
-            <Card><Stat label="From creator fees" value={usdShort(pool.totals.feeSplitsUsd)} hint="15% fee split" /></Card>
+            <Card><Stat label="From creator fees" value={usdShort(pool.totals.feeSplitsUsd)} hint="85% of creator fees" /></Card>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
             <SettlementFeed practice={practice} cluster={cluster} />
             <div className="space-y-6">
               <Card>
                 <Label>Fee splits in</Label>
-                <p className="mt-1 text-sm text-muted">After each creator-fee swap, Pullback sends 15% here until this pool reaches its target; then the share stays with Pullback.</p>
+                <p className="mt-1 text-sm text-muted">85% of our coin&apos;s creator fees, swapped from $CARDS to USDC, land in this pool.</p>
                 <ul className="mt-4 space-y-2">
                   {pool.feeSplits.length ? pool.feeSplits.map(f => (
                     <li key={f.signature} className="flex items-center justify-between text-sm">
@@ -57,7 +57,7 @@ export function PoolView() {
                 </ul>
                 {practice && (
                   <div className="mt-5 border-t border-line pt-4">
-                    <div className="text-xs text-muted">Practice: simulate a Pullback fee split</div>
+                    <div className="text-xs text-muted">Practice: simulate a creator-fee transfer</div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {[1_000, 5_000, 25_000].map(a => <Button key={a} variant="ghost" disabled={busy} onClick={() => void simulate(a)}>+{usdShort(a)}</Button>)}
                     </div>

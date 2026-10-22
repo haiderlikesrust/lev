@@ -7,8 +7,8 @@ import { MACHINES, TIERS, type MachineConfig } from '../../shared/machines';
  */
 export type Card = { mint: string; name: string; image: string | null; insuredValueUsd: number | null; rarity: string | null; transferSignature: string | null };
 export type Buyback = { available: boolean; amountMicros: number | null; expiresAt: number | null };
-/** One pull from CC's public winners feed. */
-export type FeedPull = { id: string; code: string; valueMicros: number; tier: number | null; slug: string | null; pulledAt: number };
+/** One pull from CC's public winners feed, with the card's photo and name when CC includes them. */
+export type FeedPull = { id: string; code: string; valueMicros: number; tier: number | null; slug: string | null; pulledAt: number; image?: string | null; name?: string | null };
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly detail = '') { super(`Collector Crypt returned HTTP ${status}${detail ? `: ${detail}` : ''}.`); }
@@ -37,7 +37,7 @@ export class CollectorCrypt {
   async machines(): Promise<MachineConfig[]> {
     const result = await this.request('/machines');
     if (!Array.isArray(result.machines)) throw new Error('Unexpected machine catalog.');
-    return result.machines.filter((m: any) => MACHINES.some(d => d.code === m.code) && m.contains === 1).map(parseMachine).filter(Boolean) as MachineConfig[];
+    return result.machines.filter((m: any) => MACHINES.some(d => d.code === m.code) && m.contains === 1).map((m: any) => parseMachine(m, this.baseUrl)).filter(Boolean) as MachineConfig[];
   }
 
   /** `GET /api/status`: machine codes CC is selling from right now. */
@@ -123,18 +123,34 @@ export class CollectorCrypt {
 /** Public proof that a pull came from CC's VRF (docs.collectorcrypt.com/gacha/vrf). */
 export const vrfVerifyUrl = (baseUrl: string, memo: string) => `${baseUrl}/api/vrf/verify?${new URLSearchParams({ memo })}`;
 
-export function parseMachine(m: any): MachineConfig | null {
+/** An https URL, resolving CC's site-relative paths ("/pokemon_25.png") against its base URL; anything else is dropped. */
+export function safeUrl(raw: unknown, base?: string): string | null {
+  if (typeof raw !== 'string' || !raw) return null;
+  try { const url = new URL(raw, base); return url.protocol === 'https:' && !url.username && !url.password ? url.href : null; } catch { return null; }
+}
+
+export function parseMachine(m: any, baseUrl = 'https://gacha.collectorcrypt.com'): MachineConfig | null {
   const price = Number(m.price), buyback = Number(m.instantBuyback);
   if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(buyback) || buyback <= 0 || buyback > 100) return null;
   const odds = Object.fromEntries(TIERS.map(t => [t, Number(m.odds?.[t] ?? 0)])) as MachineConfig['odds'];
   const tierRanges = Object.fromEntries(TIERS.map(t => [t, { start: Number(m.tierRanges?.[t]?.start ?? 0), end: Number(m.tierRanges?.[t]?.end ?? 0) }])) as MachineConfig['tierRanges'];
-  return { code: String(m.code), name: String(m.name ?? m.code), priceUsd: price, buybackPct: buyback, odds, tierRanges, ev: m.ev == null ? null : Number(m.ev), public: !!m.public };
+  return {
+    code: String(m.code), name: String(m.name ?? m.code), priceUsd: price, buybackPct: buyback, odds, tierRanges, ev: m.ev == null ? null : Number(m.ev), public: !!m.public,
+    image: safeUrl(m.imageNobg, baseUrl) ?? safeUrl(m.image, baseUrl) ?? safeUrl(m.thumbnailUrl, baseUrl),
+    video: safeUrl(m.videoNobgWeb, baseUrl) ?? safeUrl(m.videoSrc, baseUrl),
+  };
 }
 
 export function parsePull(w: any): FeedPull | null {
   const value = Number(w?.insuredValue), at = Date.parse(w?.created_at ?? '');
   if (!w?.nft_address || typeof w.pack_type !== 'string' || !Number.isFinite(value) || value < 0 || !Number.isFinite(at)) return null;
-  return { id: `${w.nft_address}:${at}`, code: w.pack_type, valueMicros: Math.round(value * 1_000_000), tier: Number.isInteger(w.prize_tier) ? w.prize_tier : null, slug: typeof w.memo_slug === 'string' ? w.memo_slug : null, pulledAt: at };
+  // The on-chain `name` is cut at 32 characters; `json_name` is the full one.
+  const name = w.nft?.content?.metadata?.json_name ?? w.nft?.content?.metadata?.name;
+  return {
+    id: `${w.nft_address}:${at}`, code: w.pack_type, valueMicros: Math.round(value * 1_000_000), tier: Number.isInteger(w.prize_tier) ? w.prize_tier : null,
+    slug: typeof w.memo_slug === 'string' ? w.memo_slug : null, pulledAt: at,
+    image: safeUrl(w.nft?.content?.links?.image), name: typeof name === 'string' ? name.slice(0, 120) : null,
+  };
 }
 
 export function normalizeCard(opened: any, status: any): Card {
@@ -142,10 +158,8 @@ export function normalizeCard(opened: any, status: any): Card {
   const attributes = Array.isArray(metadata.attributes) ? metadata.attributes : [];
   const rawValue = status.send?.insured_value ?? attributes.find((a: any) => /insured.?value/i.test(a.trait_type))?.value;
   const value = rawValue == null || rawValue === '' ? NaN : Number(String(rawValue).replace(/[$,]/g, ''));
-  const rawImage = nft.content?.links?.image ?? nft.content?.files?.[0]?.uri ?? metadata.image ?? nft.image;
-  let image: string | null = null;
-  try { const url = new URL(rawImage); if (url.protocol === 'https:' && !url.username && !url.password) image = url.href; } catch {}
-  return { mint: new PublicKey(opened.nft_address).toBase58(), name: metadata.name ?? nft.name ?? 'Pokémon card', image,
+  const image = safeUrl(nft.content?.links?.image ?? nft.content?.files?.[0]?.uri ?? metadata.image ?? nft.image);
+  return { mint: new PublicKey(opened.nft_address).toBase58(), name: metadata.json_name ?? metadata.name ?? nft.name ?? 'Pokémon card', image,
     insuredValueUsd: Number.isFinite(value) && value >= 0 ? value : null, rarity: opened.rarity ?? null,
     transferSignature: opened.transactionSignature ?? status.send?.transaction_signature ?? null };
 }

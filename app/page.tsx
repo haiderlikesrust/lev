@@ -1,106 +1,143 @@
 import Link from 'next/link';
-import { Card, HighRisk, Label } from '@/components/ui';
+import type { ReactNode } from 'react';
+import { ArrowDown, ArrowRight, Ban, Coins, Eye, Flame, HandCoins, PackageOpen, Receipt, Scale, Shield, ShieldCheck, Timer, Trophy, TrendingDown, Wallet } from 'lucide-react';
+import { HomeDataProvider } from '@/components/home/home-data';
+import { Hero } from '@/components/home/hero';
+import { StatsBand } from '@/components/home/stats-band';
+import { MachineShowcase } from '@/components/home/machine-showcase';
+import { LivePulls } from '@/components/home/live-pulls';
+import { PayoutCalculator } from '@/components/home/payout-calculator';
+import { IconBadge, SectionHead } from '@/components/ui';
 import { PokeBall } from '@/components/pokeball';
-import { LiveLevels } from '@/components/live-levels';
 import { APP_NAME } from '@/lib/shared/brand';
 
-const EXAMPLE = [
-  { card: 60, full: 'You get $0. The pool keeps the card and sells it back to Collector Crypt.', half: 'You get $27: half of the $54 sellback.' },
-  { card: 100, full: 'You get the card.', half: 'You get the card.' },
-  { card: 300, full: 'You get the card + a $100 bonus.', half: 'You get the card + a $100 bonus.' },
-];
+const STEPS = [
+  { icon: <Wallet size={20} />, tone: 'blue', title: 'Pay the pack price', text: 'One USDC payment from your wallet. Terms are locked when you confirm.' },
+  { icon: <PackageOpen size={20} />, tone: 'red', title: 'The pool opens it', text: 'Our pool wallet buys and opens the Collector Crypt pack, so it holds the card.' },
+  { icon: <Scale size={20} />, tone: 'yellow', title: 'Value decides', text: 'Below the price is a loss, within 5% a push, above it a win, by CC’s insured value.' },
+  { icon: <Receipt size={20} />, tone: 'green', title: 'Settled & logged', text: 'Card and bonus to you, or the card is sold back. Every transaction is public.' },
+] as const;
 
 export default function Home() {
   return (
-    <div className="space-y-14">
-      <section className="grid items-center gap-10 md:grid-cols-[1.2fr_1fr]">
-        <div>
-          <HighRisk />
-          <h1 className="mt-4 text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-            Leverage your next<br /><span className="text-poke-red">Collector Crypt</span> pull.
-          </h1>
-          <p className="mt-5 max-w-xl text-lg text-muted">
-            Beat the pack price and the pool pays you a bonus on top of your card. Miss it, and you lose the card. It&apos;s optional, and you can lose your entire pack price.
-          </p>
-          <div className="mt-7 flex flex-wrap gap-3">
-            <Link href="/open" className="inline-flex h-12 items-center rounded-full bg-poke-red px-6 font-semibold text-white transition hover:bg-poke-red-dark">Choose a machine</Link>
-            <Link href="/pool" className="inline-flex h-12 items-center rounded-full bg-mist px-6 font-semibold text-ink transition hover:bg-line">See the pool</Link>
+    <HomeDataProvider>
+      <div className="space-y-16 sm:space-y-20">
+        <div className="space-y-4">
+          <Hero />
+          <StatsBand />
+        </div>
+
+        <section>
+          <SectionHead kicker="Machines" title="Pick a machine" lede="Real Collector Crypt machines. Each one gets its own multipliers, worked out from its recent pulls."
+            action={<Link href="/open" className="inline-flex items-center gap-1.5 text-sm font-semibold text-poke-red hover:underline">Open a pack <ArrowRight size={16} /></Link>} />
+          <MachineShowcase />
+        </section>
+
+        <LivePulls />
+
+        <section>
+          <SectionHead kicker="How it works" title="Four steps, fully on-chain" />
+          <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {STEPS.map((s, i) => (
+              <li key={s.title} className="relative rounded-3xl border border-line bg-white p-5 shadow-card">
+                <div className="flex items-center justify-between">
+                  <IconBadge tone={s.tone}>{s.icon}</IconBadge>
+                  <span className="font-pixel text-xs text-muted">0{i + 1}</span>
+                </div>
+                <h3 className="mt-4 text-lg font-bold">{s.title}</h3>
+                <p className="mt-1 text-sm text-muted">{s.text}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <section className="grid grid-cols-1 gap-6 lg:grid-cols-[1.15fr_1fr]">
+          <div>
+            <SectionHead kicker="Try it" title="What would you get?" lede="Drag the card's value, or tap a row of the example." />
+            <PayoutCalculator />
           </div>
-        </div>
-        <div className="relative mx-auto hidden aspect-square w-full max-w-sm items-center justify-center md:flex">
-          <div className="absolute inset-6 rounded-full bg-poke-yellow/30" />
-          <PokeBall size={220} className="relative" />
-        </div>
-      </section>
-
-      <section>
-        <Label>How it works</Label>
-        <div className="mt-3 grid gap-4 md:grid-cols-3">
-          {[
-            ['1', 'You pay the pack price', 'Our pool wallet buys and opens the Collector Crypt pack for you, so it holds the card until the result is in.'],
-            ['2', 'The card’s value decides', 'Below the pack price is a loss. About the pack price (within 5%) is a push. Above it is a win. The value is Collector Crypt’s insured value.'],
-            ['3', 'Settled automatically', 'Win: the card and your bonus go to your wallet. Push: you get the card. Loss: the pool sells the card back. Every pack is logged publicly with transaction links.'],
-          ].map(([n, title, text]) => (
-            <Card key={n}>
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-ink font-pixel text-xs text-white">{n}</div>
-              <h3 className="mt-4 font-semibold">{title}</h3>
-              <p className="mt-1.5 text-sm text-muted">{text}</p>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
-        <Card>
-          <Label>Example at 1.5x on a $100 pack</Label>
-          <p className="mt-2 text-sm text-muted">Bonus = (card value − pack price) × (multiplier − 1). Here, (300 − 100) × 0.5 = $100.</p>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[420px] text-sm">
-              <thead><tr className="text-left text-xs text-muted"><th className="pb-2 font-medium">Card worth</th><th className="pb-2 font-medium">Full risk</th><th className="pb-2 font-medium">Half risk</th></tr></thead>
-              <tbody>
-                {EXAMPLE.map(row => (
-                  <tr key={row.card} className="border-t border-line align-top">
-                    <td className="py-3 pr-3 font-semibold tabular-nums">${row.card}</td>
-                    <td className="py-3 pr-3">{row.full}</td>
-                    <td className="py-3">{row.half}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div>
+            <SectionHead kicker="Levels" title="Pick your risk" />
+            <div className="grid grid-cols-1 gap-3">
+              <Level icon={<Shield size={20} />} tone="blue" name="Half risk" range="about 1.4–1.9x" text="Lose, and you still get half of what Collector Crypt pays to buy the card back." />
+              <Level icon={<Flame size={20} />} tone="red" name="Full risk" range="about 2.1–2.9x" text="Lose, and you get nothing. The multiplier is higher." />
+              <div className="rounded-3xl border border-dashed border-line p-5 text-sm text-muted">
+                Both levels leave the pool the same small edge (about 3–5%), so your average result is a normal open&apos;s minus that edge. <Link href="/docs#multipliers" className="font-semibold text-poke-blue hover:underline">See the math</Link>
+              </div>
+            </div>
           </div>
-          <p className="mt-3 text-xs text-muted">1.5x is only for the example; the half-risk sellback assumes a 90% buyback machine. Each machine&apos;s real multiplier is set from Collector Crypt&apos;s pull data so the pool keeps a small edge of about 3–5%.</p>
-        </Card>
-        <div className="grid gap-4">
-          <Card>
-            <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-poke-blue" /><h3 className="font-semibold">Half risk</h3></div>
-            <p className="mt-1.5 text-sm text-muted">On a loss you get half of what Collector Crypt pays to buy the card back. The multiplier is lower (about 1.4–1.9x).</p>
-          </Card>
-          <Card>
-            <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-poke-red" /><h3 className="font-semibold">Full risk</h3></div>
-            <p className="mt-1.5 text-sm text-muted">On a loss you get nothing. The multiplier is higher (about 2.1–2.9x).</p>
-          </Card>
-          <Card className="bg-mist !border-transparent">
-            <h3 className="font-semibold">The pool sits in the middle</h3>
-            <p className="mt-1.5 text-sm text-muted">Losing cards are sold back to Collector Crypt and that money pays winners&apos; bonuses. The pool also gets 15% of our coin&apos;s creator fees, kept apart from Pullback&apos;s loss coverage. Bigger machines unlock as the pool grows.</p>
-          </Card>
-        </div>
-      </section>
+        </section>
 
-      <section><LiveLevels /></section>
+        <section>
+          <SectionHead kicker="The pool" title="The pool sits in the middle" lede="A separate wallet, so leverage never touches Pullback's loss coverage. Bigger machines unlock as it grows." />
+          <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-[1fr_auto_1.1fr_auto_1fr]">
+            <FlowNode icon={<TrendingDown size={20} />} tone="red" title="Losing packs" text="The card is sold back to Collector Crypt; the USDC goes to the pool." />
+            <FlowArrow />
+            <div className="dots relative flex flex-col items-center justify-center overflow-hidden rounded-3xl bg-navy p-6 text-center text-white">
+              <PokeBall size={44} />
+              <div className="mt-3 font-display text-xl font-bold">Leverage pool</div>
+              <div className="mt-1 text-sm text-white/70">+ 85% of our coin&apos;s creator fees</div>
+              <Link href="/pool" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-poke-yellow hover:underline">See it live <ArrowRight size={14} /></Link>
+            </div>
+            <FlowArrow />
+            <FlowNode icon={<Trophy size={20} />} tone="yellow" title="Winning packs" text="The card plus a bonus, paid from the pool straight to the winner." />
+          </div>
+        </section>
 
-      <section>
-        <Card>
-          <Label>Play responsibly</Label>
-          <ul className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-            <li>• Leverage is off until you turn it on for your wallet.</li>
-            <li>• Every pack asks you to confirm “HIGH RISK — you can lose your entire pack price”.</li>
-            <li>• Set your own daily loss limit on the History page.</li>
-            <li>• After 5 losses in a row, {APP_NAME} pauses your wallet for a short break.</li>
-            <li>• No discounts and no “open another” prompts after a loss.</li>
-            <li>• On average every level returns less than you pay, like a normal open.</li>
+        <section className="rounded-[2rem] bg-white p-6 shadow-card sm:p-8">
+          <SectionHead kicker="Play responsibly" title="Built to keep it a game" />
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Rule icon={<ShieldCheck size={18} />} text="Off until you turn it on for your wallet." />
+            <Rule icon={<Eye size={18} />} text="“HIGH RISK — you can lose your entire pack price” on every pack." />
+            <Rule icon={<HandCoins size={18} />} text="Set your own daily loss limit any time." />
+            <Rule icon={<Timer size={18} />} text={`5 losses in a row and ${APP_NAME} gives your wallet a short break.`} />
+            <Rule icon={<Ban size={18} />} text="No discounts or “open another” prompts after a loss." />
+            <Rule icon={<Coins size={18} />} text="On average every level returns less than you pay, like a normal open." />
           </ul>
-        </Card>
-      </section>
+        </section>
+
+        <section className="dots relative overflow-hidden rounded-[2rem] bg-navy px-6 py-10 text-center text-white sm:px-10">
+          <div className="hero-glow absolute inset-0" />
+          <div className="relative">
+            <h2 className="text-3xl font-extrabold sm:text-4xl">See every outcome before you pay.</h2>
+            <p className="mx-auto mt-3 max-w-xl text-white/70">Odds, the biggest possible bonus and the average result are on screen before you confirm, and every pack&apos;s transactions are public.</p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Link href="/open" className="inline-flex h-12 items-center gap-2 rounded-full bg-poke-red px-6 font-semibold transition hover:bg-poke-red-dark">Choose a machine <ArrowRight size={18} /></Link>
+              <Link href="/leaderboard" className="inline-flex h-12 items-center gap-2 rounded-full bg-white/10 px-6 font-semibold ring-1 ring-white/20 transition hover:bg-white/15"><Trophy size={18} /> Leaderboard</Link>
+            </div>
+          </div>
+        </section>
+      </div>
+    </HomeDataProvider>
+  );
+}
+
+function Level({ icon, tone, name, range, text }: { icon: ReactNode; tone: 'blue' | 'red'; name: string; range: string; text: string }) {
+  return (
+    <div className="flex gap-4 rounded-3xl border border-line bg-white p-5 shadow-card">
+      <IconBadge tone={tone}>{icon}</IconBadge>
+      <div>
+        <div className="flex flex-wrap items-baseline gap-x-2"><h3 className="text-lg font-bold">{name}</h3><span className="text-sm text-muted">{range}</span></div>
+        <p className="mt-1 text-sm text-muted">{text}</p>
+      </div>
     </div>
   );
+}
+
+function FlowNode({ icon, tone, title, text }: { icon: ReactNode; tone: 'red' | 'yellow'; title: string; text: string }) {
+  return (
+    <div className="rounded-3xl border border-line bg-white p-5 shadow-card">
+      <IconBadge tone={tone}>{icon}</IconBadge>
+      <h3 className="mt-4 text-lg font-bold">{title}</h3>
+      <p className="mt-1 text-sm text-muted">{text}</p>
+    </div>
+  );
+}
+
+function FlowArrow() {
+  return <div className="flex items-center justify-center text-muted"><ArrowDown size={22} className="lg:-rotate-90" /></div>;
+}
+
+function Rule({ icon, text }: { icon: ReactNode; text: string }) {
+  return <li className="flex items-start gap-3 text-sm"><span className="mt-0.5 text-poke-red">{icon}</span><span>{text}</span></li>;
 }

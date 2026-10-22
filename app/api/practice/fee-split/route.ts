@@ -5,7 +5,7 @@ import { httpError } from '@/lib/server/redact';
 import { indexFeeSplits } from '@/lib/server/services';
 import { poolView } from '@/lib/server/views';
 
-/** Practice mode only: pretend Pullback's fee cycle sent its 15% share to the leverage pool. */
+/** Practice mode only: pretend a creator-fee transfer (already swapped to USDC) reached the leverage pool. */
 export function POST(req: NextRequest) {
   return api(async s => {
     sameOrigin(req);

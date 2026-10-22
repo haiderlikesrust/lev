@@ -26,8 +26,10 @@ export interface Solana {
   transferNft(jobId: string, mint: string, to: string): Promise<string>;
   /** A buyer's USDC and SOL, checked before they are asked to sign. */
   walletFunds(owner: string): Promise<{ usdcAccount: boolean; usdcMicros: bigint; lamports: bigint }>;
-  /** USDC that reached LEV_POOL from Pullback's fee split since the newest one we know. */
+  /** Creator-fee USDC that reached LEV_POOL since the newest transfer we know. */
   feeSplits(after: string | null): Promise<FeeSplit[]>;
+  /** LEV_POOL swaps USDC into our coin and burns it. Idempotent per job id; throws PendingOperation until done. */
+  buybackAndBurn(jobId: string, usdcMicros: number, slippageBps: number): Promise<{ tokens: bigint; swapSignature: string; burnSignature: string }>;
 }
 
 /** Collector Crypt, or the practice mock. */

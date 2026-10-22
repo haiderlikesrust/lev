@@ -12,7 +12,7 @@ import { APP_NAME } from '@/lib/shared/brand';
 // The wallet button reads browser-only wallet state, so it renders on the client only.
 const WalletMultiButton = dynamic(() => import('@solana/wallet-adapter-react-ui').then(m => m.WalletMultiButton), { ssr: false, loading: () => <div className="h-10 w-28 rounded-full bg-mist sm:w-36" /> });
 
-const LINKS = [{ href: '/', label: 'Home' }, { href: '/open', label: 'Open' }, { href: '/pool', label: 'Pool' }, { href: '/history', label: 'History' }, { href: '/docs', label: 'Docs' }];
+const LINKS = [{ href: '/', label: 'Home' }, { href: '/open', label: 'Open' }, { href: '/pool', label: 'Pool' }, { href: '/leaderboard', label: 'Leaderboard' }, { href: '/history', label: 'History' }, { href: '/docs', label: 'Docs' }];
 
 export function Nav() {
   const path = usePathname();
@@ -45,7 +45,7 @@ export function Nav() {
           <span className="truncate text-[15px] font-bold tracking-tight max-[360px]:hidden">{APP_NAME}</span>
         </Link>
 
-        <nav className="ml-3 hidden items-center gap-1 md:flex" aria-label="Main">
+        <nav className="ml-3 hidden items-center gap-1 lg:flex" aria-label="Main">
           {links.map(l => (
             <Link key={l.href} href={l.href} aria-current={path === l.href ? 'page' : undefined}
               className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${path === l.href ? 'bg-ink text-white' : 'text-muted hover:bg-mist hover:text-ink'}`}>
@@ -57,13 +57,13 @@ export function Nav() {
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {needsSignIn && (
             <button onClick={doSignIn} disabled={signingIn}
-              className="hidden h-10 rounded-full bg-poke-blue px-4 text-sm font-semibold text-white transition hover:bg-poke-blue-dark disabled:opacity-50 md:inline-flex md:items-center">
+              className="hidden h-10 rounded-full bg-poke-blue px-4 text-sm font-semibold text-white transition hover:bg-poke-blue-dark disabled:opacity-50 lg:inline-flex lg:items-center">
               {signingIn ? 'Signing…' : 'Sign in'}
             </button>
           )}
           <WalletMultiButton />
           <button onClick={() => setOpenOn(open ? null : path)} aria-expanded={open} aria-controls="mobile-menu" aria-label={open ? 'Close menu' : 'Open menu'}
-            className="relative flex h-10 w-10 items-center justify-center rounded-full bg-mist text-ink transition hover:bg-line md:hidden">
+            className="relative flex h-10 w-10 items-center justify-center rounded-full bg-mist text-ink transition hover:bg-line lg:hidden">
             {open ? <X size={20} /> : <Menu size={20} />}
             {needsSignIn && !open && <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-poke-blue" />}
           </button>
@@ -71,7 +71,7 @@ export function Nav() {
       </div>
 
       {open && (
-        <div id="mobile-menu" className="border-t border-line bg-white px-4 pb-5 pt-2 shadow-sm md:hidden">
+        <div id="mobile-menu" className="border-t border-line bg-white px-4 pb-5 pt-2 shadow-sm lg:hidden">
           <nav className="flex flex-col" aria-label="Main">
             {links.map(l => (
               <Link key={l.href} href={l.href} onClick={() => setOpenOn(null)} aria-current={path === l.href ? 'page' : undefined}

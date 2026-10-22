@@ -2,8 +2,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { MachineConfig } from '../shared/machines';
 
-/** The real CC pull sample saved by `npm run snapshot` (values and tiers only). */
-export type Sample = { fetchedAt: string; machines: Record<string, { config: MachineConfig; from: number; to: number; pulls: [number, number][] }> };
+/** One saved pull: insured value (USD), CC prize tier, card photo URL and card name. */
+export type SamplePull = [value: number, tier: number, image?: string | null, name?: string | null];
+/** The real CC pull sample saved by `npm run snapshot` (no wallets). */
+export type Sample = { fetchedAt: string; machines: Record<string, { config: MachineConfig; from: number; to: number; pulls: SamplePull[] }> };
 
 let cached: Sample | null = null;
 export function loadSample(): Sample {

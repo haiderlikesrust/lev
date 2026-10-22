@@ -28,7 +28,7 @@ const Note = ({ children }: { children: ReactNode }) => <div className="rounded-
 
 export default function DocsPage() {
   return (
-    <div className="grid gap-10 lg:grid-cols-[200px_1fr]">
+    <div className="grid grid-cols-1 gap-10 lg:grid-cols-[200px_1fr]">
       <aside className="hidden lg:block">
         <nav className="sticky top-28 space-y-0.5 text-sm" aria-label="Docs sections">
           <Label className="mb-3">Docs</Label>
@@ -117,7 +117,7 @@ export default function DocsPage() {
         <Section id="pool" title="The pool">
           <p>The leverage pool is its own wallet (LEV_POOL), separate from Pullback&apos;s loss-coverage pool, so a bad run of leverage packs can never touch loss coverage.</p>
           <ul className="list-disc space-y-1.5 pl-5">
-            <li><strong>Money in:</strong> sellbacks of losing cards, plus 15% of our coin&apos;s creator fees. The fees are claimed in $CARDS, swapped to USDC on Jupiter by Pullback, and split 85% Pullback / 15% here, until this pool reaches its target. Then the full share stays with Pullback. Every split is logged.</li>
+            <li><strong>Money in:</strong> sellbacks of losing cards, plus 85% of our coin&apos;s creator fees. The fees are claimed in $CARDS and swapped to USDC on Jupiter, and every transfer into the pool is listed on the <Link href="/pool">Pool page</Link>.</li>
             <li><strong>Money out:</strong> win bonuses and Half-risk floors.</li>
             <li><strong>Reservations:</strong> while a pack is open, its biggest possible bonus is set aside, so every bonus in progress is always payable. &ldquo;Free&rdquo; balance is what&apos;s left.</li>
             <li><strong>Unlocks:</strong> a level opens only when the free pool can absorb that level&apos;s ups and downs (under a <Rule name="ruin" /> chance of running dry) and its bonus cap is at least <Rule name="minCap" />. Bigger machines unlock as the pool grows.</li>
@@ -130,7 +130,7 @@ export default function DocsPage() {
         <Section id="fairness" title="Fairness & verification">
           <p>Every pull comes from CC&apos;s own machines. CC draws them with a verifiable random function (VRF), and each settled pack links to CC&apos;s proof (<code className="rounded bg-mist px-1">/api/vrf/verify</code>).</p>
           <p>The pack&apos;s CC order is tied to your purchase <em>before</em> it opens. A pull can&apos;t be reassigned to someone else after the result is known.</p>
-          <p>Each settlement shows its transactions on Solscan:</p>
+          <p>Each settlement shows its transactions on Solscan, and every entry on the <Link href="/leaderboard">Leaderboard</Link> opens its full proof trail:</p>
           <ul className="list-disc space-y-1 pl-5">
             <li><strong>payment</strong> — your USDC to LEV_OPS</li>
             <li><strong>pack</strong> — LEV_OPS paying CC for the pack</li>
@@ -168,7 +168,7 @@ export default function DocsPage() {
             ['Is my average result positive?', 'No. Like a normal open, every level returns less than you pay on average. Leverage spreads your result out: more total losses, bigger wins.'],
             ['Which wallets work?', 'Phantom and Solflare. You need USDC for the pack and a little SOL (about 0.002) for the network fee.'],
             ['What if the card’s value isn’t known yet?', 'The pack waits until CC records it, well inside CC’s 72-hour buyback window. If it takes too long, the team settles it by hand.'],
-            ['Where does the bonus money come from?', 'From losing packs’ sellbacks, plus 15% of our coin’s creator fees, held in the separate leverage pool.'],
+            ['Where does the bonus money come from?', 'From losing packs’ sellbacks, plus 85% of our coin’s creator fees, held in the separate leverage pool.'],
           ].map(([q, a]) => (
             <details key={q} className="group rounded-2xl border border-line px-4 py-3">
               <summary className="cursor-pointer list-none font-medium after:float-right after:text-muted after:content-['+'] group-open:after:content-['−']">{q}</summary>
@@ -178,7 +178,7 @@ export default function DocsPage() {
         </Section>
 
         <Section id="glossary" title="Glossary">
-          <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[160px_1fr]">
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-[160px_1fr]">
             {[
               ['Pack price', 'What the CC machine charges for one pack, in USDC.'],
               ['Insured value', 'CC’s reference value for a graded card; it decides the outcome.'],

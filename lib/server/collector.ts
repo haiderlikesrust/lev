@@ -31,9 +31,9 @@ export class Collector {
 
   async insert(pulls: FeedPull[]) {
     if (!pulls.length) return 0;
-    const rows = pulls.map(p => ({ id: p.id, code: p.code, value_micros: p.valueMicros, tier: p.tier, slug: p.slug, pulled_at: p.pulledAt }));
-    const inserted = await this.db.query(`INSERT INTO cc_pulls(id,code,value_micros,tier,slug,pulled_at)
-      SELECT id,code,value_micros,tier,slug,pulled_at FROM jsonb_to_recordset($1::jsonb) AS x(id text, code text, value_micros bigint, tier integer, slug text, pulled_at bigint)
+    const rows = pulls.map(p => ({ id: p.id, code: p.code, value_micros: p.valueMicros, tier: p.tier, slug: p.slug, pulled_at: p.pulledAt, image: p.image ?? null, name: p.name ?? null }));
+    const inserted = await this.db.query(`INSERT INTO cc_pulls(id,code,value_micros,tier,slug,pulled_at,image,name)
+      SELECT id,code,value_micros,tier,slug,pulled_at,image,name FROM jsonb_to_recordset($1::jsonb) AS x(id text, code text, value_micros bigint, tier integer, slug text, pulled_at bigint, image text, name text)
       ON CONFLICT(id) DO NOTHING RETURNING id`, [JSON.stringify(rows)]);
     return inserted.rows.length;
   }
@@ -67,7 +67,7 @@ export class Collector {
     let added = 0;
     for (const [code, m] of Object.entries(loadSample().machines)) {
       const span = Math.max(1, m.to - m.from);
-      added += await this.insert(m.pulls.map(([value, tier], i) => ({ id: `sample:${code}:${i}`, code, valueMicros: Math.round(value * 1_000_000), tier, slug: 'sample', pulledAt: now - span + Math.round(span * i / Math.max(1, m.pulls.length - 1)) })));
+      added += await this.insert(m.pulls.map(([value, tier, image, name], i) => ({ id: `sample:${code}:${i}`, code, valueMicros: Math.round(value * 1_000_000), tier, slug: 'sample', pulledAt: now - span + Math.round(span * i / Math.max(1, m.pulls.length - 1)), image: image ?? null, name: name ?? null })));
     }
     return added;
   }

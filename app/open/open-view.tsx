@@ -7,6 +7,7 @@ import { useSession } from '@/components/providers';
 import { Button, Card, HighRisk, Label, Locked } from '@/components/ui';
 import { RiskConfirm } from '@/components/risk-confirm';
 import { Reveal } from '@/components/reveal';
+import { MachineArt } from '@/components/machine-art';
 import { apiGet, apiPost, chance, fromBase64, mult, pct, toBase64, usd, usdShort, usePoll } from '@/lib/client/api';
 import { LEVELS, LEVEL_NAME, type Level } from '@/lib/shared/leverage';
 import type { ConfigView, MachineView, MeView, OfferView, OrderView } from '@/lib/shared/types';
@@ -74,7 +75,7 @@ export function OpenView() {
 
   if (order) return (
     <div className="mx-auto max-w-2xl">
-      <Reveal order={order} practice={config.practice} cluster={config.cluster} onClose={() => { setOrder(null); setError(null); }} />
+      <Reveal order={order} machine={config.machines.find(m => m.code === order.code) ?? null} practice={config.practice} cluster={config.cluster} onClose={() => { setOrder(null); setError(null); }} />
     </div>
   );
 
@@ -83,7 +84,7 @@ export function OpenView() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <HighRisk />
-          <h1 className="mt-3 text-3xl font-bold tracking-tight">Open a leverage pack</h1>
+          <h1 className="mt-3 text-3xl font-extrabold sm:text-4xl">Open a leverage pack</h1>
           <p className="mt-1 text-muted">Pick a machine and a level. You&apos;ll see every outcome before you confirm.</p>
         </div>
       </div>
@@ -96,7 +97,7 @@ export function OpenView() {
       </div>
 
       {machine && (
-        <div className="grid gap-6 lg:grid-cols-[1fr_1.15fr]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1.15fr]">
           <div>
             <Label>2 · Level</Label>
             <div className="mt-3 grid gap-3">
@@ -144,13 +145,17 @@ function MachineTile({ m, selected, onSelect }: { m: MachineView; selected: bool
   const live = m.offers.filter(o => o.available);
   return (
     <button onClick={onSelect} aria-pressed={selected}
-      className={`rounded-3xl border-2 p-4 text-left transition ${selected ? 'border-ink bg-white shadow-sm' : 'border-line bg-white hover:border-muted'}`}>
-      <div className="text-2xl font-bold tabular-nums">${m.priceUsd}</div>
-      <div className="text-sm text-muted">{m.name}</div>
-      <div className="mt-3 flex flex-wrap gap-1">
-        {live.length ? live.map(o => (
-          <span key={o.level} className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${o.level === 'full' ? 'bg-poke-red/10 text-poke-red' : 'bg-poke-blue/10 text-poke-blue'}`}>{o.level === 'full' ? 'F' : 'H'} {mult(o.multiplierBps)}</span>
-        )) : <Locked>Locked</Locked>}
+      className={`group flex flex-col overflow-hidden rounded-3xl border-2 bg-white text-left shadow-card transition ${selected ? 'border-poke-red ring-4 ring-poke-red/10' : 'border-transparent hover:-translate-y-0.5 hover:shadow-lift'}`}>
+      <div className={`flex h-28 items-end justify-center pt-2 transition ${selected ? 'bg-gradient-to-b from-poke-yellow/25 to-white' : 'bg-gradient-to-b from-mist to-white'}`}>
+        <MachineArt image={m.image} name={m.name} className={`h-24 w-24 transition duration-300 ${selected ? 'scale-105' : 'group-hover:scale-105'}`} />
+      </div>
+      <div className="p-3">
+        <div className="flex items-baseline justify-between gap-2"><span className="font-display text-xl font-extrabold tabular-nums">${m.priceUsd}</span><span className="truncate text-xs text-muted">{m.name}</span></div>
+        <div className="mt-2 flex flex-wrap gap-1">
+          {live.length ? live.map(o => (
+            <span key={o.level} className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${o.level === 'full' ? 'bg-poke-red/10 text-poke-red' : 'bg-poke-blue/10 text-poke-blue'}`}>{o.level === 'full' ? 'Full' : 'Half'} {mult(o.multiplierBps)}</span>
+          )) : <Locked>Locked</Locked>}
+        </div>
       </div>
     </button>
   );

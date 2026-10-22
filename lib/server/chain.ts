@@ -1,5 +1,5 @@
-import { ComputeBudgetProgram, Connection, Keypair, PublicKey, TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
-import { NATIVE_MINT, createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync } from '@solana/spl-token';
+import { ComputeBudgetProgram, Connection, Keypair, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
+import { AccountLayout, NATIVE_MINT, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, createBurnCheckedInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync, getMint } from '@solana/spl-token';
 import bs58 from 'bs58';
 import { config } from './config';
 import { Jobs, PendingOperation, ReviewRequired } from './jobs';
@@ -8,6 +8,9 @@ import { Jobs, PendingOperation, ReviewRequired } from './jobs';
 export const CORE_PROGRAM = 'CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d';
 /** Newest transaction format we read from chain history. */
 export const MAX_TX_VERSION = 1;
+/** SOL every signing wallet keeps for fees; an external transaction may not spend below it. */
+const GAS_RESERVE_LAMPORTS = 20_000_000n;
+export type TxPolicy = { kind: 'swap' | 'internal'; inputMint?: string; maxInput?: bigint; minInput?: bigint; outputMint?: string; minOutput?: bigint };
 
 export function connection(url = config.SOLANA_RPC_URL) {
   return url ? new Connection(url, { commitment: 'confirmed', confirmTransactionInitialTimeout: 20_000, fetch: (u, init) => fetch(u, { ...init, signal: AbortSignal.any([...(init?.signal ? [init.signal as AbortSignal] : []), AbortSignal.timeout(8000)]) }) }) : null;
@@ -38,7 +41,62 @@ export class Chain {
     return new VersionedTransaction(new TransactionMessage({ payerKey: signer.publicKey, recentBlockhash: block.blockhash, instructions: all }).compileToV0Message());
   }
 
-  async execute(id: string, kind: string, build: () => Promise<VersionedTransaction>) {
+  /** Simulates an externally built transaction (a Jupiter swap) and checks every balance and authority it touches. Ported from Pullback. */
+  async validateExternal(tx: VersionedTransaction, policy: TxPolicy) {
+    const { rpc, signer } = this.require();
+    const lookups = await Promise.all(tx.message.addressTableLookups.map(async l => { const table = await rpc.getAddressLookupTable(l.accountKey); if (!table.value) throw new Error('Missing transaction address table.'); return table.value; }));
+    const message = TransactionMessage.decompile(tx.message, { addressLookupTableAccounts: lookups });
+    if (!message.payerKey.equals(signer.publicKey)) throw new Error(`Transaction fee payer does not match the ${this.label} wallet.`);
+    for (const ix of message.instructions) {
+      const program = ix.programId.toBase58();
+      if ([TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()].includes(program) && ![3, 9, 12, 17].includes(ix.data[0])) throw new ReviewRequired('Unexpected token authority operation.');
+    }
+    const groups = await Promise.all([TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID].map(programId => rpc.getTokenAccountsByOwner(signer.publicKey, { programId })));
+    const owned = groups.flatMap(g => g.value); const addresses = [signer.publicKey, ...owned.map(a => a.pubkey)];
+    for (const mint of [policy.inputMint, policy.outputMint].filter(Boolean) as string[]) {
+      if (mint === NATIVE_MINT.toBase58()) continue;
+      const info = await rpc.getAccountInfo(new PublicKey(mint)); if (!info) throw new Error('Token mint not found.');
+      const ata = getAssociatedTokenAddressSync(new PublicKey(mint), signer.publicKey, false, info.owner);
+      if (!addresses.some(a => a.equals(ata))) addresses.push(ata);
+    }
+    if (addresses.length > 90) throw new ReviewRequired('Use a dedicated wallet with fewer than 90 token accounts.');
+    const before = await rpc.getMultipleAccountsInfo(addresses, 'confirmed');
+    const simulation = await rpc.simulateTransaction(tx, { sigVerify: false, replaceRecentBlockhash: true, accounts: { encoding: 'base64', addresses: addresses.map(a => a.toBase58()) }, commitment: 'confirmed' });
+    if (simulation.value.err) throw new Error(`Transaction simulation failed: ${JSON.stringify(simulation.value.err)}`);
+    const after = simulation.value.accounts; if (!after || after.length !== addresses.length) throw new Error('Missing simulation account results.');
+    // The wallet itself must stay a plain System-owned account: an `assign` would hand it to another program.
+    if (after[0] && (after[0].owner !== SystemProgram.programId.toBase58() || after[0].data?.[0])) throw new ReviewRequired('Transaction would change who controls the wallet.');
+    const deltas = new Map<string, bigint>();
+    for (let i = 1; i < addresses.length; i++) {
+      const old = before[i]?.data, newBytes = after[i]?.data?.[0] ? Buffer.from(after[i]!.data[0], 'base64') : null;
+      const a = old && old.length >= 165 ? AccountLayout.decode(old) : null, b = newBytes && newBytes.length >= 165 ? AccountLayout.decode(newBytes) : null;
+      if (a && b && !a.mint.equals(b.mint)) throw new ReviewRequired('Wallet token mint changed.');
+      if (before[i] && after[i] && before[i]!.owner.toBase58() !== after[i]!.owner) throw new ReviewRequired('Wallet token program changed.');
+      if (b && (!b.owner.equals(signer.publicKey) || b.delegateOption !== a?.delegateOption && b.delegateOption !== 0 || b.closeAuthorityOption !== a?.closeAuthorityOption && b.closeAuthorityOption !== 0)) throw new ReviewRequired('Wallet ownership or authority changed.');
+      if (a && b && (a.delegateOption !== b.delegateOption || !a.delegate.equals(b.delegate) || a.closeAuthorityOption !== b.closeAuthorityOption || !a.closeAuthority.equals(b.closeAuthority))) throw new ReviewRequired('Wallet token authority changed.');
+      const mint = (a?.mint ?? b?.mint)?.toBase58(); if (mint) deltas.set(mint, (deltas.get(mint) ?? 0n) + (b?.amount ?? 0n) - (a?.amount ?? 0n));
+    }
+    const solDelta = BigInt(after[0]?.lamports ?? 0) - BigInt(before[0]?.lamports ?? 0);
+    if (solDelta < -20_000_000n || BigInt(after[0]?.lamports ?? 0) < GAS_RESERVE_LAMPORTS) throw new ReviewRequired('Transaction exceeds gas allowance or wallet reserve.');
+    for (const [mint, delta] of deltas) if (delta < 0n && (mint !== policy.inputMint || -delta > (policy.maxInput ?? 0n))) throw new ReviewRequired('Unexpected wallet token debit.');
+    if (policy.inputMint && -(deltas.get(policy.inputMint) ?? 0n) < (policy.minInput ?? 0n)) throw new ReviewRequired('Swap input does not match.');
+    if (policy.outputMint && (deltas.get(policy.outputMint) ?? 0n) < (policy.minOutput ?? 0n)) throw new ReviewRequired('Swap output is below the minimum.');
+  }
+
+  /** Burns tokens held by this wallet. Works for both SPL Token and Token-2022 mints. Ported from Pullback. */
+  async burn(id: string, mintAddress: string, amount: bigint) {
+    if (amount <= 0n) throw new Error('Burn amount must be positive.');
+    return this.execute(id, 'burn', async () => {
+      const { rpc, signer } = this.require(); const mint = new PublicKey(mintAddress);
+      const info = await rpc.getAccountInfo(mint); if (!info) throw new Error('Token mint not found.');
+      const programId = info.owner; if (!programId.equals(TOKEN_PROGRAM_ID) && !programId.equals(TOKEN_2022_PROGRAM_ID)) throw new ReviewRequired('Token mint uses an unknown token program.');
+      const decimals = (await getMint(rpc, mint, 'confirmed', programId)).decimals;
+      const account = getAssociatedTokenAddressSync(mint, signer.publicKey, false, programId);
+      return this.build([ComputeBudgetProgram.setComputeUnitLimit({ units: 60_000 }), createBurnCheckedInstruction(account, mint, signer.publicKey, amount, decimals, [], programId)]);
+    });
+  }
+
+  async execute(id: string, kind: string, build: () => Promise<VersionedTransaction>, policy: TxPolicy = { kind: 'internal' }) {
     const { rpc, signer } = this.require(); let job = await this.jobs.get(id);
     if (job?.status === 'confirmed') return job.data.signature as string;
     if (job?.status === 'failed') {
@@ -51,7 +109,7 @@ export class Chain {
     if (!job?.data.raw) {
       // A transaction that keeps failing the same way must reach a human, not loop forever.
       if ((job?.data.attempts?.length ?? 0) >= 3) throw new ReviewRequired(`This ${kind} failed 3 times: ${job?.data.attempts?.at(-1)?.error ?? 'unknown error'}`);
-      const tx = await build();
+      const tx = await build(); if (policy.kind !== 'internal') await this.validateExternal(tx, policy);
       tx.sign([signer]); const signature = bs58.encode(tx.signatures[0]);
       const data = { ...(job?.data ?? {}), raw: Buffer.from(tx.serialize()).toString('base64'), signature, blockhash: tx.message.recentBlockhash };
       // Persist the exact signed bytes before any broadcast; retries reuse this signature.

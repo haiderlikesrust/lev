@@ -27,4 +27,7 @@ export type MachineConfig = {
   /** CC's own expected insured value per pack; null until CC computes it. */
   ev: number | null;
   public: boolean;
+  /** CC's machine art: a transparent PNG and a transparent looping video (absolute URLs). */
+  image: string | null;
+  video: string | null;
 };

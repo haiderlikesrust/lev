@@ -15,8 +15,12 @@ const schema = z.object({
   LEV_OPS_PRIVATE_KEY: z.string().default(''),
   /** LEV_POOL: the leverage pool's USDC. Receives sellbacks and the fee split; pays bonuses and floors. */
   LEV_POOL_PRIVATE_KEY: z.string().default(''),
-  /** Pullback's POOL wallet: the only sender whose `fee-split:` transfers count as fee income. */
-  PULLBACK_POOL_WALLET: z.string().default(''),
+  /** The wallet that claims our coin's creator fees and sends their USDC here with memo `fee-split:<cycle>`; only its transfers count as fee income. */
+  FEE_SOURCE_WALLET: z.string().default(''),
+  /** Our coin's mint (for the owner's manual buyback). */
+  MEMECOIN_MINT: z.string().default(''),
+  /** From portal.jup.ag, for swaps. */
+  JUPITER_API_KEY: z.string().default(''),
   SOLANA_RPC_URL: z.string().default(''),
   /** DAS-capable RPC for card names and images (defaults to SOLANA_RPC_URL). */
   DAS_RPC_URL: z.string().default(''),

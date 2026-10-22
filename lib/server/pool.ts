@@ -15,12 +15,17 @@ export class LevPool {
   constructor(readonly db: Database, readonly solana: Solana, readonly settings: SettingsStore) {}
 
   invalidate() { this.cache = null; }
-  async balance() {
+  /** LEV_POOL's on-chain USDC. */
+  async usdc() {
     if (this.cache && Date.now() - this.cache.at < 15_000) return this.cache.micros;
     const value = this.solana.poolAddress ? Number(await this.solana.usdcBalance(this.solana.poolAddress)) : 0;
     this.cache = { micros: value, at: Date.now() };
     return value;
   }
+  /** Creator-fee USDC sitting in LEV_POOL that is held for the owner's buyback, not pool money. */
+  async held() { return Number((await this.db.query<{ total: string }>("SELECT COALESCE(SUM(amount_micros),0)::text AS total FROM ledger WHERE bucket='burn'")).rows[0].total); }
+  /** The pool's own money: on-chain USDC minus what is held for the buyback. */
+  async balance() { return (await this.usdc()) - (await this.held()); }
   async reserved() { return Number((await this.db.query<{ total: string }>('SELECT COALESCE(SUM(micros),0)::text AS total FROM reservations WHERE released_at IS NULL')).rows[0].total); }
   async free() { return (await this.balance()) - (await this.reserved()); }
 
