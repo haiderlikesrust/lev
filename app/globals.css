@@ -1,26 +1,67 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Minimal white base with Pokémon accents: Poké Ball red, Pikachu yellow, Poké blue. */
+@theme {
+  --color-poke-red: #ee1515;
+  --color-poke-red-dark: #c40f0f;
+  --color-poke-yellow: #ffcb05;
+  --color-poke-blue: #3b4cca;
+  --color-poke-blue-dark: #2c3a9e;
+  --color-ink: #1c1c1e;
+  --color-muted: #6b6b70;
+  --color-line: #e9e7e2;
+  --color-mist: #f7f6f2;
+  --color-loss: #d62f0b;
+  --color-push: #85858a;
+  --color-win: #b98a00;
+  --color-common: #a8a29e;
+  --color-uncommon: #4fa83d;
+  --color-rare: #5b7fe0;
+  --color-epic: #a040a0;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-pixel: var(--font-silkscreen), ui-monospace, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+html { background: #ffffff; color: var(--color-ink); }
+body { background: #ffffff; color: var(--color-ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+::selection { background: var(--color-poke-yellow); color: var(--color-ink); }
+
+/* Wallet adapter, brought into the same look. */
+.wallet-adapter-button { font-family: var(--font-sans) !important; font-weight: 600 !important; height: 40px !important; border-radius: 999px !important; padding: 0 18px !important; font-size: 14px !important; }
+.wallet-adapter-button-trigger { background: var(--color-ink) !important; }
+.wallet-adapter-button:not([disabled]):hover { background: #000 !important; }
+.wallet-adapter-modal-wrapper { background: #fff !important; border-radius: 20px !important; }
+.wallet-adapter-modal-title, .wallet-adapter-modal-list .wallet-adapter-button { color: var(--color-ink) !important; }
+.wallet-adapter-modal-list .wallet-adapter-button:not([disabled]):hover { background: var(--color-mist) !important; }
+.wallet-adapter-modal-button-close { background: var(--color-mist) !important; }
+.wallet-adapter-modal-button-close svg { fill: var(--color-ink) !important; }
+.wallet-adapter-modal-list-more { color: var(--color-muted) !important; }
+.wallet-adapter-dropdown-list { border-radius: 16px !important; }
+@media (max-width: 639px) {
+  .wallet-adapter-button { padding: 0 12px !important; font-size: 13px !important; }
+  .wallet-adapter-button-start-icon { margin-right: 6px !important; width: 20px !important; height: 20px !important; }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Poké Ball: shakes while the pack opens, then splits open on the reveal. */
+@keyframes ball-shake {
+  0%, 60%, 100% { transform: rotate(0); }
+  10%, 30% { transform: rotate(-18deg); }
+  20%, 40% { transform: rotate(18deg); }
 }
+@keyframes ball-open-top { to { transform: translateY(-40%) rotate(-14deg); opacity: 0; } }
+@keyframes ball-open-bottom { to { transform: translateY(40%) rotate(10deg); opacity: 0; } }
+@keyframes card-in {
+  from { transform: perspective(800px) rotateY(90deg) scale(0.85); opacity: 0; }
+  to { transform: perspective(800px) rotateY(0) scale(1); opacity: 1; }
+}
+@keyframes pulse-glow { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.ball-shake { animation: ball-shake 1.4s ease-in-out infinite; transform-origin: 50% 85%; }
+.ball-open-top { animation: ball-open-top 0.5s ease-in forwards; }
+.ball-open-bottom { animation: ball-open-bottom 0.5s ease-in forwards; }
+.card-in { animation: card-in 0.6s cubic-bezier(.2,.8,.2,1) 0.35s both; }
+.glow { animation: pulse-glow 2.4s ease-in-out infinite; }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@media (prefers-reduced-motion: reduce) {
+  .ball-shake, .glow { animation: none; }
+  .ball-open-top, .ball-open-bottom, .card-in { animation-duration: 0.01s; animation-delay: 0s; }
 }

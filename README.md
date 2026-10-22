@@ -1,36 +1,120 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Crypt Leverage (placeholder name)
 
-## Getting Started
+An optional, **high-risk** leverage add-on to Collector Crypt (CC) packs, next to Pullback (loss coverage).
+The name lives in one place: `lib/shared/brand.ts`.
 
-First, run the development server:
+**What happens to a pack:**
+- **You pay:** you pay the pack price.
+- **We open it:** our `LEV_OPS` wallet buys and opens the CC pack, so it holds the card. A losing card can never be kept.
+- **The value decides** (CC's insured value):
+
+| Card value | Outcome | Full risk | Half risk |
+|---|---|---|---|
+| < 0.95× price | loss | $0. The pool sells the card back to CC. | 50% of the sellback |
+| 0.95–1.05× price | push | the card | the card |
+| ≥ 1.05× price | win | card + `(value − price) × (M − 1)` | same |
+
+The bonus is capped. Every settlement is logged publicly with transaction links and CC's VRF proof.
+
+## Run it (practice mode)
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**With no `.env`, the app runs in practice mode:**
+- **Money:** play money in memory.
+- **Packs:** mocked CC purchases drawn from a saved sample of 5,830 real CC pulls (values and tiers only), so outcomes and multipliers match reality.
+- **Database:** embedded Postgres (PGlite) in `.data/`.
+- **Wallet:** pick **Burner Wallet** in the wallet list. It is a fresh throwaway wallet on every page load.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+On the Pool page, "simulate a fee split" adds play money to the pool, so you can watch levels unlock.
 
-## Learn More
+**Other commands:**
+- `npm test`: 24 tests covering the math, the payout identity, every settlement path, refunds, cool-down, loss limits, unlocks and pause.
+- `npm run calibrate`: read-only; prints fair multipliers from CC's live pull history (`--sample` uses the saved sample, `--pool 50000` sets the pool size).
+- `npm run snapshot`: refreshes the practice sample from CC.
+- `npm run check`: read-only launch checks (CC endpoints, wallets, fee-split source).
 
-To learn more about Next.js, take a look at the following resources:
+## What Collector Crypt provides (all documented at docs.collectorcrypt.com)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Use | Endpoint |
+|---|---|
+| Machines, price, odds, tier ranges, buyback % | `GET /api/machines`, `GET /api/status` |
+| Buy and open | `POST /api/generatePack` → sign → `POST /api/submitTransaction` → `POST /api/openPack` |
+| Result and value | `GET /api/pack/status?memo=` (`send.insured_value`, `to_wallet`) |
+| Sell a losing card back | `GET /api/buyback/available`, `POST /api/buyback` with `altRecipient` = LEV_POOL |
+| Fairness proof | `GET /api/vrf/verify?memo=` |
+| Calibration data | `GET /api/getAllWinners` (latest 200 per machine), `GET /api/getWinners?slug=&cursor=` |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Not documented by CC:**
+- How insured value is set.
+- A Terms of Service about buying packs for others (TODO: ask CC).
 
-## Deploy on Vercel
+**Hard limits from CC's docs:**
+- Open a paid pack within 2 h.
+- Sell back within 72 h.
+- At most 30 unopened packs per wallet and machine per 2 h.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## How multipliers are set
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+There are no fixed tiers. Each machine × level gets the multiplier that leaves the pool a small edge, solved daily from the last 30 days of real pulls (`lib/shared/calibration.ts`):
+
+- **Fair multiplier:** `M = 1 + ((1−φ)·b·L − edge) / W`.
+  - `L` is the average take on losses; `W` is how far wins beat the price.
+  - `b` is the machine's buyback; `φ` is the floor (0 for Full, 0.5 for Half).
+  - With the bonus cap applied, it is solved numerically.
+- **What players see:** valued at CC's sellback price, **player return = normal-open return − pool edge**, exactly. The Open page shows both numbers.
+- **Edge:** 5% at launch. A machine drops to 3% once the data supports it, meaning the pool's 95% lower bound is ≥ 0 (bootstrap uncapped, normal approximation capped).
+- **Thin data:** if the data supports neither edge, the level stays locked ("collecting pulls"). It is never offered at a worse multiple.
+- **Unlocking:** a level opens once the free pool covers both of these:
+  - its 1%-ruin bankroll `σ²·ln(100)/(2·edge)·price`;
+  - a bonus cap of at least 10× the pack price.
+
+On today's one-day sample at a $50k pool, three levels are live: $25 Half 1.50x, $25 Full 2.10x and $50 Half 1.70x. The rest open as pulls accumulate. The collector adds about 80 an hour on busy machines.
+
+## Pool safety and responsible play
+
+- **Separate wallet:** `LEV_POOL`, so leverage can never touch Pullback's loss-coverage money.
+- **Bonus cap:** 10% of the free pool per pack, locked at quote. Every pack in progress reserves its cap.
+- **Auto-pause:**
+  - globally, below the safety line ($1,000 free by default);
+  - per machine, when calibration is over 48 h old.
+- **Volume limits:** per-wallet and global daily limits exist but default to **off** (0), like Pullback.
+- **Responsible play:**
+  - Opt-in per wallet.
+  - The HIGH RISK checkbox starts unticked on every pack.
+  - Each player can set a daily loss limit: lowering is instant, raising takes 24 h.
+  - A 10-minute cool-down after 5 losses in a row.
+  - The result screen offers no "open another" and no discounts.
+
+## Layout
+
+| Path | What it does |
+|---|---|
+| `lib/shared/leverage.ts`, `calibration.ts` | Pure math: outcomes, bonus, floor, fair-multiplier solver, bootstrap, offers |
+| `lib/server/orders.ts` | Order state machine: pay → buy → open → settle (loss / push / win) → log; refunds and review |
+| `lib/server/cc/*` | CC client, purchase flow and pack-payment validator (ported from Pullback), plus the new sellback flow |
+| `lib/server/chain.ts`, `payment.ts` | Persist-then-broadcast transactions and payment validation (ported from Pullback) |
+| `lib/server/collector.ts`, `calibration.ts` | CC pull feed into the database; daily recalibration |
+| `lib/server/services.ts` | Wiring, plus the background worker |
+| `app/` | Pages (Home, Open, Pool, History, Admin) and `app/api/*` routes |
+
+The worker runs inside the server process, started by `instrumentation.ts`, the way Pullback's coordinator does. That way exactly one process owns the database and every money-moving step. Run one instance.
+
+## Before mainnet
+
+1. **Fill in `.env.local`** from `.env.example`, then run `npm run check` until it is all green.
+2. **Pullback fee split.** Add the 85/15 split to Pullback's fee cycle (ppp repo). After each swap, send `min(15% × USDC, target − LEV_POOL balance)` to `LEV_POOL` with memo `fee-split:<cycleId>`. This app indexes those transfers.
+3. **Run on devnet first** against `https://dev-gacha.collectorcrypt.com`, through every settlement path. In particular, confirm the shape of CC's buyback transaction (`lib/server/cc/sellback.ts`).
+4. **Mainnet smoke test:** a tiny pool and one $25 Half-risk pack. Reconcile the ledger against the chain.
+
+**TODO / assumptions:**
+- A CC API key and CC's OK to buy packs for users.
+- pNFT/legacy card transfers (CC cards are Core today).
+- The launch numbers (edge, cap, pause line, target, cool-down).
+- The leverage-pool target for the fee split.
+- Legal review (age/geo gating).
