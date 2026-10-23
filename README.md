@@ -16,6 +16,14 @@ The name lives in one place: `lib/shared/brand.ts`.
 
 The bonus is capped. Every settlement is logged publicly with transaction links and CC's VRF proof.
 
+**Shorts** are the opposite bet: that the next pull anyone opens on a machine comes out under the pack price. No pack is bought. The stake (the pack price) waits in `LEV_OPS`, and the first CC pull on that machine stamped at least `shortGuardSeconds` after the payment decides it:
+
+| Next card | Outcome | Player gets |
+|---|---|---|
+| < 0.95× price | win | stake + `(price − value) × S` (from the pool) |
+| 0.95–1.05× price | push | stake back |
+| ≥ 1.05× price | loss | $0; the stake goes to the pool |
+
 ## Run it (practice mode)
 
 ```bash
@@ -36,7 +44,7 @@ On the Pool page, "simulate a fee split" adds play money to the pool, so you can
 **If pages keep reloading on their own,** a production build in `.next` is confusing the dev server. Stop `npm run dev`, delete `.next`, and start it again. Don't run `npm run build` while dev is running.
 
 **Other commands:**
-- `npm test`: 24 tests covering the math, the payout identity, every settlement path, refunds, cool-down, loss limits, unlocks and pause.
+- `npm test`: 35 tests covering the math, the payout identity, every settlement path (packs and shorts), refunds, cool-down, loss limits, unlocks and pause.
 - `npm run calibrate`: read-only; prints fair multipliers from CC's live pull history (`--sample` uses the saved sample, `--pool 50000` sets the pool size).
 - `npm run snapshot`: refreshes the practice sample from CC.
 - `npm run check`: read-only launch checks (CC endpoints, wallets, fee-split source).
@@ -78,6 +86,16 @@ There are no fixed tiers. Each machine × level gets the multiplier that leaves 
 
 On today's one-day sample at a $50k pool, three levels are live: $25 Half 1.50x, $25 Full 2.10x and $50 Half 1.70x. The rest open as pulls accumulate. The collector adds about 80 an hour on busy machines.
 
+### Shorts
+
+The same pulls price shorts (`lib/shared/short.ts`): the pool's EV per short is `H − S·D`, where `H` is the hit rate and `D` the average shortfall of a miss, so
+
+- **Fair S:** `S = (H − edge) / D`, rounded down to 0.05x. No pack is bought, so CC's cut is not in it: **player return = −pool edge**, exactly.
+- **Pool risk is small:** the most one short can win is `S × (price − cheapest card)`. On the saved sample, shorts need roughly 3–100× less pool than Full-risk longs, so every machine can open at today's pool size.
+- **One pull, one bet:** every short waiting on a machine rides the same next pull, so together their top payouts share the per-pack cap (10% of the free pool).
+- **No pull within `shortWaitMinutes`** (60 by default): the stake is refunded in full.
+- **TODO:** CC's feed has no VRF request slot, so a short relies on CC's `created_at` stamp. Confirm on devnet that it is stamped no later than the reveal; the guard covers a short lag. If not, settle shorts only on packs this app opens.
+
 ## Pool safety and responsible play
 
 - **Separate wallet:** `LEV_POOL`, so leverage can never touch Pullback's loss-coverage money.
@@ -90,7 +108,7 @@ On today's one-day sample at a $50k pool, three levels are live: $25 Half 1.50x,
   - Opt-in per wallet.
   - The HIGH RISK checkbox starts unticked on every pack.
   - Each player can set a daily loss limit: lowering is instant, raising takes 24 h.
-  - A 10-minute cool-down after 5 losses in a row.
+  - A 10-minute cool-down after 5 losses in a row (packs and shorts count together).
   - The result screen offers no "open another" and no discounts.
 
 ## Design versions

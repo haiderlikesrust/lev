@@ -34,10 +34,11 @@ export function PoolView() {
             </div>
           </Card>
 
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
             <Card><Stat label="Bonuses paid" value={usdShort(pool.totals.bonusesUsd)} hint={`${pool.totals.wins} wins`} /></Card>
             <Card><Stat label="Sellback collected" value={usdShort(pool.totals.sellbackUsd)} hint={`${pool.totals.losses} losses`} /></Card>
             <Card><Stat label="Half-risk floors paid" value={usdShort(pool.totals.floorsUsd)} /></Card>
+            <Card><Stat label="Shorts" value={usdShort(pool.totals.shortStakesUsd - pool.totals.shortPayoutsUsd)} hint={`${pool.totals.shorts} settled · ${usdShort(pool.totals.shortPayoutsUsd)} paid out`} /></Card>
             <Card><Stat label="From creator fees" value={usdShort(pool.totals.feeSplitsUsd)} hint="85% of creator fees" /></Card>
           </div>
 

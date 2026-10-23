@@ -4,6 +4,7 @@ import {
   poolEv, rng, roundDownMultiplierBps, ruinBankrollMicros, safeMultiplierBps, solveK,
 } from '@/lib/shared/leverage';
 import { calibrateMachine, offer, type OfferContext } from '@/lib/shared/calibration';
+import { calibrateShort, decomposeShort, fairShortBps, shortMaxPayoutMicros, shortOffer, shortOutcome, shortPayoutMicros, shortPoolEv, shortPoolPnl } from '@/lib/shared/short';
 
 const M = 1_000_000;
 
@@ -129,5 +130,60 @@ describe('offers', () => {
     expect(offer(full, ctx(10_000_000, 1_000 + 49 * 3_600_000)).reason).toMatch(/re-checked/);
     expect(offer(full, ctx(10_000_000)).maxLossMicros).toBe(100 * M);
     expect(offer(half, ctx(10_000_000)).maxLossMicros).toBe(100 * M - Math.floor(0.5 * 0.9 * 50 * M));
+  });
+});
+
+describe('shorts', () => {
+  it('wins when the pull misses, pays (price − value) × S on top of the stake, capped', () => {
+    expect(shortOutcome(25 * M, 20 * M)).toBe('win');
+    expect(shortOutcome(25 * M, 25 * M)).toBe('push');
+    expect(shortOutcome(25 * M, 30 * M)).toBe('loss');
+    expect(shortPayoutMicros(25 * M, 20 * M, 20_000, 100 * M)).toBe(10 * M);
+    expect(shortPayoutMicros(25 * M, 20 * M, 20_000, 4 * M)).toBe(4 * M);
+    expect(shortPayoutMicros(25 * M, 24 * M, 20_000, 100 * M)).toBe(0);
+    expect(shortPayoutMicros(25 * M, 500 * M, 20_000, 100 * M)).toBe(0);
+    expect(shortMaxPayoutMicros(25 * M, 13 * M, 20_000)).toBe(24 * M);
+  });
+
+  it('fair S leaves the pool its edge, and the player gets exactly minus that edge', () => {
+    const ratios = sample(50_000, 5), d = decomposeShort(ratios), bps = fairShortBps(d, 0.05), s = bps / 10_000;
+    expect(bps % 500).toBe(0);
+    const poolMean = ratios.reduce((a, r) => a + shortPoolPnl(r, s), 0) / ratios.length;
+    expect(poolMean).toBeCloseTo(shortPoolEv(d, s), 12);
+    expect(poolMean).toBeGreaterThanOrEqual(0.05 - 1e-12);
+    expect(shortPoolEv(d, s + 0.05)).toBeLessThan(0.05);
+    // The player's side of every pull is the pool's, negated: no pack is bought, so nothing else is in it.
+    const playerMean = ratios.reduce((a, r) => a + (r < 0.95 ? s * (1 - r) : r >= 1.05 ? -1 : 0), 0) / ratios.length;
+    expect(playerMean).toBeCloseTo(-poolMean, 12);
+  });
+
+  it('the pool can never lose more than S × (1 − lowest pull) on one short', () => {
+    const ratios = sample(5_000, 9), s = fairShortBps(decomposeShort(ratios), 0.05) / 10_000, low = Math.min(...ratios);
+    expect(Math.min(...ratios.map(r => shortPoolPnl(r, s)))).toBeGreaterThanOrEqual(-s * (1 - low) - 1e-12);
+  });
+
+  it('opens once the pool covers its bankroll and top payout, and needs far less pool than a long', () => {
+    const ratios = sample(20_000, 3), row = calibrateShort('pokemon_100', ratios, { fromMs: 0, toMs: 1 }, { edgesBps: [300, 500], now: 1_000 })!;
+    const settings = { capBps: 1_000, minCapMultiple: 10, edgeBps: 500, minEdgeBps: 300, ruinProbability: 0.01, calibrationMaxAgeHours: 48, minSamples: 200 };
+    const ctx = (freeUsd: number): OfferContext => ({ priceMicros: 100 * M, freeMicros: freeUsd * M, minValueMicros: 50 * M, now: 2_000, settings });
+    const big = shortOffer(row, ctx(10_000_000));
+    expect(big.available).toBe(true);
+    expect(big.side).toBe('short');
+    expect(big.playerReturn).toBeCloseTo(-big.poolEdge, 12);
+    expect(big.maxLossMicros).toBe(100 * M);
+    expect(big.capMicros).toBe(shortMaxPayoutMicros(100 * M, 50 * M, big.multiplierBps));
+    expect(big.pWin).toBeCloseTo(row.pMiss, 12);
+    const small = shortOffer(row, ctx(100));
+    expect(small.reason).toMatch(/Unlocks when the pool reaches/);
+    expect(shortOffer(row, ctx(small.unlockAtMicros / M)).available).toBe(true);
+    const long = offer(calibrateMachine('pokemon_100', ratios, 0.9, { fromMs: 0, toMs: 1 }, { edgesBps: [300, 500], resamples: 300, seed: 2, now: 1_000 }).find(r => r.level === 'full')!, ctx(10_000_000));
+    expect(small.unlockAtMicros).toBeLessThan(long.unlockAtMicros);
+  });
+
+  it('waits for more pulls on thin data', () => {
+    const row = calibrateShort('pokemon_100', sample(60, 4), { fromMs: 0, toMs: 1 }, { edgesBps: [300, 500], now: 1_000 })!;
+    const o = shortOffer(row, { priceMicros: 100 * M, freeMicros: 10_000_000 * M, minValueMicros: 50 * M, now: 2_000, settings: { capBps: 1_000, minCapMultiple: 10, edgeBps: 500, minEdgeBps: 300, ruinProbability: 0.01, calibrationMaxAgeHours: 48, minSamples: 200 } });
+    expect(o.available).toBe(false);
+    expect(o.reason).toMatch(/Collecting/);
   });
 });

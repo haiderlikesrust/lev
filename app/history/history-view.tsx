@@ -4,11 +4,10 @@ import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useSession } from '@/components/providers';
 import { Button, Card, ExternalLink, Label, OutcomeBadge, Stat, TxLink } from '@/components/ui';
-import { apiPost, mult, usd, usePoll } from '@/lib/client/api';
-import { LEVEL_NAME } from '@/lib/shared/leverage';
+import { apiPost, playLabel, playResult, usd, usePoll } from '@/lib/client/api';
 import type { ConfigView, MeView, OrderView } from '@/lib/shared/types';
 
-const STATUS: Partial<Record<OrderView['status'], string>> = { awaiting_payment: 'Waiting for payment', paying: 'Confirming payment', paid: 'Buying pack', buying: 'Opening pack', settling: 'Settling', refunding: 'Refunding', refunded: 'Refunded', expired: 'Expired', review: 'Being checked' };
+const STATUS: Partial<Record<OrderView['status'], string>> = { awaiting_payment: 'Waiting for payment', paying: 'Confirming payment', paid: 'Buying pack', buying: 'Opening pack', watching: 'Waiting for the next pull', settling: 'Settling', refunding: 'Refunding', refunded: 'Refunded', expired: 'Expired', review: 'Being checked' };
 
 export function HistoryView() {
   const { me, signedIn, signIn, signingIn, setMe } = useSession();
@@ -28,7 +27,8 @@ export function HistoryView() {
 
   const settled = (orders ?? []).filter(o => o.status === 'complete');
   const paid = settled.reduce((s, o) => s + o.priceUsd, 0);
-  const back = settled.reduce((s, o) => s + o.bonusUsd + o.floorUsd + (o.outcome === 'loss' ? 0 : o.valueUsd ?? 0), 0);
+  // Packs: bonuses, floors and kept cards at insured value. Shorts: stakes back and payouts.
+  const back = settled.reduce((s, o) => s + o.bonusUsd + o.floorUsd + (o.outcome === 'loss' ? 0 : o.side === 'short' ? o.priceUsd : o.valueUsd ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -42,7 +42,7 @@ export function HistoryView() {
           <div className="grid grid-cols-3 gap-4 border-b border-line px-5 py-5 sm:px-6">
             <Stat label="Packs" value={settled.length} />
             <Stat label="Paid" value={usd(paid, 0)} />
-            <Stat label="Got back" value={usd(back, 0)} hint="bonuses, floors and cards at insured value" />
+            <Stat label="Got back" value={usd(back, 0)} hint="cards at insured value, bonuses, floors and short wins" />
           </div>
           {!orders ? <div className="m-5 h-32 animate-pulse rounded-2xl bg-mist" /> : !orders.length ? <p className="px-6 py-10 text-center text-sm text-muted">No leverage packs yet.</p> : (
             <ul>
@@ -50,12 +50,12 @@ export function HistoryView() {
                 <li key={o.id} className="border-b border-line px-5 py-4 last:border-0 sm:px-6">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0 text-sm">
-                      <div className="truncate font-medium">${o.priceUsd} {o.machineName} · {LEVEL_NAME[o.level]} {mult(o.multiplierBps)}</div>
-                      <div className="truncate text-xs text-muted">{new Date(o.createdAt).toLocaleString()}{o.card ? ` · ${o.card.name} · ${usd(o.valueUsd ?? 0)}` : ''}</div>
+                      <div className="truncate font-medium">{playLabel(o)}</div>
+                      <div className="truncate text-xs text-muted">{new Date(o.createdAt).toLocaleString()}{o.card ? ` · ${o.side === 'short' ? 'next card: ' : ''}${o.card.name} · ${usd(o.valueUsd ?? 0)}` : ''}</div>
                     </div>
                     <div className="shrink-0 text-right">
                       {o.outcome ? <OutcomeBadge outcome={o.outcome} /> : <span className="text-xs text-muted">{STATUS[o.status] ?? o.status}</span>}
-                      {o.outcome && <div className="mt-1 text-xs tabular-nums text-muted">{o.outcome === 'win' ? `card + ${usd(o.bonusUsd)}` : o.outcome === 'push' ? 'card' : o.floorUsd ? `${usd(o.floorUsd)} floor` : '$0'}</div>}
+                      {o.outcome && <div className="mt-1 text-xs tabular-nums text-muted">{playResult(o)}</div>}
                     </div>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-x-3">
@@ -65,6 +65,9 @@ export function HistoryView() {
                     <TxLink label="card" signature={o.links.nftTransfer} practice={practice} cluster={cluster} />
                     <TxLink label="bonus" signature={o.links.bonus} practice={practice} cluster={cluster} />
                     <TxLink label="floor" signature={o.links.floor} practice={practice} cluster={cluster} />
+                    <TxLink label="stake back" signature={o.links.stakeBack} practice={practice} cluster={cluster} />
+                    <TxLink label="short payout" signature={o.links.payout} practice={practice} cluster={cluster} />
+                    <TxLink label="stake to pool" signature={o.links.stakeToPool} practice={practice} cluster={cluster} />
                     <TxLink label="refund" signature={o.links.refund} practice={practice} cluster={cluster} />
                     {o.vrfUrl && <ExternalLink href={o.vrfUrl}>VRF</ExternalLink>}
                   </div>

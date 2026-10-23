@@ -11,21 +11,22 @@ const money = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
 export function StatsBand() {
   const { config, stats } = useHomeData();
   const pool = config?.pool, t = stats?.totals;
-  const offers = config?.machines.flatMap(m => m.offers) ?? [], live = offers.filter(o => o.available);
-  const best = live.reduce((b, o) => Math.max(b, o.multiplierBps), 0);
+  const offers = config?.machines.flatMap(m => [...m.offers, ...(m.short ? [m.short] : [])]) ?? [], live = offers.filter(o => o.available);
+  // A short's multiple is per $1 under the price, not comparable with a long's, so the headline is the best long.
+  const best = live.filter(o => o.side === 'long').reduce((b, o) => Math.max(b, o.multiplierBps), 0);
   return (
     <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
       <Tile icon={<Coins size={18} />} tone="bg-poke-yellow/25 text-poke-yellow-dark" label="Pool balance" value={pool?.balanceUsd ?? 0} format={money} href="/pool">
         <div className="h-2 overflow-hidden rounded-full bg-mist"><div className="h-full rounded-full bg-gradient-to-r from-uncommon to-poke-yellow transition-[width] duration-1000" style={{ width: `${(pool?.healthBps ?? 0) / 100}%` }} /></div>
         <div className="mt-1.5 text-xs text-muted">Pool HP {Math.round((pool?.healthBps ?? 0) / 100)}%</div>
       </Tile>
-      <Tile icon={<Gift size={18} />} tone="bg-poke-red/10 text-poke-red" label="Bonuses paid" value={t?.bonusesUsd ?? 0} format={money} href="/leaderboard">
-        <div className="text-xs text-muted">across {t?.wins ?? 0} winning packs · biggest {money(t?.biggestBonusUsd ?? 0)}</div>
+      <Tile icon={<Gift size={18} />} tone="bg-poke-red/10 text-poke-red" label="Bonuses & short wins" value={(t?.bonusesUsd ?? 0) + (t?.shortPayoutsUsd ?? 0)} format={money} href="/leaderboard">
+        <div className="text-xs text-muted">across {t?.wins ?? 0} wins · biggest {money(t?.biggestBonusUsd ?? 0)}</div>
       </Tile>
-      <Tile icon={<Layers size={18} />} tone="bg-poke-blue/10 text-poke-blue" label="Packs settled" value={t?.packs ?? 0} format={n => Math.round(n).toLocaleString('en-US')} href="/pool">
+      <Tile icon={<Layers size={18} />} tone="bg-poke-blue/10 text-poke-blue" label="Plays settled" value={(t?.packs ?? 0) + (t?.shorts ?? 0)} format={n => Math.round(n).toLocaleString('en-US')} href="/pool">
         <OutcomeBar wins={t?.wins ?? 0} pushes={t?.pushes ?? 0} losses={t?.losses ?? 0} />
       </Tile>
-      <Tile icon={<Zap size={18} />} tone="bg-epic/10 text-epic" label="Levels live" value={live.length} format={n => `${Math.round(n)}/${offers.length || 12}`} href="/open">
+      <Tile icon={<Zap size={18} />} tone="bg-epic/10 text-epic" label="Levels live" value={live.length} format={n => `${Math.round(n)}/${offers.length || 18}`} href="/open">
         <div className="text-xs text-muted">{best ? <>up to <span className="font-semibold text-ink">{mult(best)}</span> right now</> : 'unlocking as the pool grows'}</div>
       </Tile>
     </section>

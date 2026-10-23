@@ -45,16 +45,20 @@ const SPARKS = Array.from({ length: 10 }, (_, i) => { const a = (i / 10) * Math.
  * The pack's progress and result. While the server works, CC's own machine runs; when the pack settles, a
  * burst of light, the capsule pops open and the card flips over, then the result rises in. The sequence is the
  * same for every outcome (no extra celebration for wins, no near-miss effects), and there is no "open another".
+ * A short runs the same sequence on the pull it rode: someone else's card.
  */
 export function Reveal({ order, machine, practice, cluster, onClose }: { order: OrderView; machine: MachineView | null; practice: boolean; cluster: string; onClose: () => void }) {
   const done = order.status === 'complete', stopped = ['refunded', 'expired', 'review'].includes(order.status);
-  const got = order.outcome === 'win' ? `The card + ${usd(order.bonusUsd)}` : order.outcome === 'push' ? 'The card' : order.floorUsd > 0 ? `${usd(order.floorUsd)} (half the sellback)` : '$0';
+  const short = order.side === 'short';
+  const got = short
+    ? order.outcome === 'win' ? `${usd(order.priceUsd, 0)} + ${usd(order.bonusUsd)}` : order.outcome === 'push' ? `${usd(order.priceUsd, 0)} back` : '$0'
+    : order.outcome === 'win' ? `The card + ${usd(order.bonusUsd)}` : order.outcome === 'push' ? 'The card' : order.floorUsd > 0 ? `${usd(order.floorUsd)} (half the sellback)` : '$0';
   const color = rarityColor(order.card?.rarity);
   return (
     <Card className="overflow-hidden !p-0">
       <div className="border-b border-line px-5 py-4">
-        <Label>${order.priceUsd} {order.machineName} · {LEVEL_NAME[order.level]} · {mult(order.multiplierBps)}</Label>
-        {!stopped && <div className="mx-auto mt-4 max-w-md"><ProgressSteps status={order.status} /></div>}
+        <Label>{short ? <>Short · next ${order.priceUsd} {order.machineName} pull · {mult(order.multiplierBps)} per $1 under</> : <>${order.priceUsd} {order.machineName} · {LEVEL_NAME[order.level]} · {mult(order.multiplierBps)}</>}</Label>
+        {!stopped && <div className="mx-auto mt-4 max-w-md"><ProgressSteps status={order.status} side={order.side} /></div>}
       </div>
 
       <div className="dots relative flex min-h-[23rem] flex-col items-center justify-center overflow-hidden bg-navy px-4 py-10">
@@ -75,7 +79,10 @@ export function Reveal({ order, machine, practice, cluster, onClose }: { order: 
               </div>
               {SPARKS.map((s, i) => <span key={i} className="sparkle left-1/2 top-1/2" style={{ background: i % 2 ? color : '#ffcb05', '--dx': s.dx, '--dy': s.dy } as CSSProperties} />)}
             </div>
-            <div className="relative"><CardArt card={order.card} valueUsd={order.valueUsd} flip /></div>
+            <div className="relative">
+              <CardArt card={order.card} valueUsd={order.valueUsd} flip />
+              {short && <p className="rise mt-4 text-center text-xs text-white/70 [animation-delay:1.9s]">The next pull, opened by another player</p>}
+            </div>
           </div>
         ) : (
           <div className="relative text-center">
@@ -93,7 +100,7 @@ export function Reveal({ order, machine, practice, cluster, onClose }: { order: 
           <div className="flex flex-wrap items-center gap-3"><OutcomeBadge outcome={order.outcome} /><span className="text-sm text-muted">{order.card?.name}</span></div>
           <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <div className="text-sm text-muted">Card value {usd(order.valueUsd ?? 0)} vs pack {usd(order.priceUsd, 0)}</div>
+              <div className="text-sm text-muted">{short ? 'Next card' : 'Card value'} {usd(order.valueUsd ?? 0)} vs pack {usd(order.priceUsd, 0)}</div>
               <div className="mt-1 font-display text-3xl font-extrabold">You get: {got}</div>
             </div>
           </div>
@@ -105,7 +112,11 @@ export function Reveal({ order, machine, practice, cluster, onClose }: { order: 
             <TxLink label="Floor" signature={order.links.floor} practice={practice} cluster={cluster} />
             <TxLink label="Card to you" signature={order.links.nftTransfer} practice={practice} cluster={cluster} />
             <TxLink label="Bonus" signature={order.links.bonus} practice={practice} cluster={cluster} />
+            <TxLink label="Stake back" signature={order.links.stakeBack} practice={practice} cluster={cluster} />
+            <TxLink label="Short payout" signature={order.links.payout} practice={practice} cluster={cluster} />
+            <TxLink label="Stake to pool" signature={order.links.stakeToPool} practice={practice} cluster={cluster} />
             {order.vrfUrl && <ExternalLink href={order.vrfUrl}>Fairness proof (VRF)</ExternalLink>}
+            {short && !practice && order.pull?.mint && <ExternalLink href={`https://collectorcrypt.com/assets/solana/${order.pull.mint}`}>The pulled card</ExternalLink>}
           </div>
         </div>
       )}

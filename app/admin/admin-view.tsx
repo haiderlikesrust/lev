@@ -26,6 +26,8 @@ const FIELDS: { key: keyof Settings; label: string; hint: string }[] = [
   { key: 'globalDailyUsd', label: 'Total volume / 24h ($)', hint: '0 = no limit' },
   { key: 'calibrationWindowDays', label: 'Calibration window (days)', hint: '' },
   { key: 'minSamples', label: 'Min pulls per machine', hint: '' },
+  { key: 'shortGuardSeconds', label: 'Short guard (seconds)', hint: 'a short rides pulls CC stamps this long after payment' },
+  { key: 'shortWaitMinutes', label: 'Short max wait (minutes)', hint: 'refunded in full if no pull comes' },
   { key: 'feePoolShareBps', label: 'Creator fees to pool (bps)', hint: '8500 = 85%; the rest is held for your buyback' },
   { key: 'buybackSlippageBps', label: 'Buyback slippage (bps)', hint: '100 = 1%' },
 ];
@@ -96,7 +98,7 @@ export function AdminView() {
             {data.review.map(o => (
               <li key={o.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
                 <div className="min-w-0">
-                  <div className="font-medium">${o.priceUsd} {o.machineName} · {LEVEL_NAME[o.level]} {mult(o.multiplierBps)} · <span className="font-mono text-xs">{o.id.slice(0, 8)}</span></div>
+                  <div className="font-medium">${o.priceUsd} {o.machineName} · {o.side === 'short' ? 'Short' : LEVEL_NAME[o.level]} {mult(o.multiplierBps)} · <span className="font-mono text-xs">{o.id.slice(0, 8)}</span></div>
                   <div className="text-xs text-loss">{o.error}</div>
                 </div>
                 <div className="flex gap-2">
@@ -127,6 +129,7 @@ export function AdminView() {
               {LEVELS.map(l => (
                 <label key={l} className="flex items-center gap-2"><input type="checkbox" checked={draft.levels[l]} onChange={e => setDraft({ ...draft, levels: { ...draft.levels, [l]: e.target.checked } })} className="accent-ink" />{LEVEL_NAME[l]}</label>
               ))}
+              <label className="flex items-center gap-2"><input type="checkbox" checked={draft.shortsEnabled} onChange={e => setDraft({ ...draft, shortsEnabled: e.target.checked })} className="accent-ink" />Short</label>
             </div>
             <div className="mt-4 font-medium">Machines</div>
             <div className="mt-2 flex flex-wrap gap-4">

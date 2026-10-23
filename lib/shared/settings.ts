@@ -25,6 +25,15 @@ export type Settings = {
   /** After this many losses in a row, a wallet waits `cooldownMinutes`. */
   cooldownLosses: number; cooldownMinutes: number;
   levels: Record<Level, boolean>;
+  /** Shorts: bets that the next pull on a machine misses. */
+  shortsEnabled: boolean;
+  /**
+   * A short rides the first pull CC stamps at least this long after its payment confirmed, so nobody can short a
+   * pull they have already seen. TODO: confirm on devnet how late CC stamps `created_at` after a reveal.
+   */
+  shortGuardSeconds: number;
+  /** A short with no pull after this long is refunded in full (a quiet machine, or CC's feed is down). */
+  shortWaitMinutes: number;
   disabledMachines: string[];
   /** Share of incoming creator-fee USDC that is pool money; the rest is held for the owner's buyback. */
   feePoolShareBps: number;
@@ -41,6 +50,7 @@ export const DEFAULT_SETTINGS: Settings = {
   perWalletDailyPacks: 0, perWalletDailyUsd: 0, globalDailyUsd: 0,
   cooldownLosses: 5, cooldownMinutes: 10,
   levels: { half: true, full: true },
+  shortsEnabled: true, shortGuardSeconds: 30, shortWaitMinutes: 60,
   disabledMachines: [],
   feePoolShareBps: 8_500, buybackSlippageBps: 100,
 };
@@ -55,6 +65,7 @@ export const settingsSchema = z.object({
   perWalletDailyPacks: z.number().int().min(0), perWalletDailyUsd: nonNegative, globalDailyUsd: nonNegative,
   cooldownLosses: z.number().int().min(0).max(100), cooldownMinutes: z.number().min(0).max(24 * 60),
   levels: z.object({ half: z.boolean(), full: z.boolean() }),
+  shortsEnabled: z.boolean(), shortGuardSeconds: z.number().min(0).max(600), shortWaitMinutes: z.number().min(1).max(24 * 60),
   disabledMachines: z.array(z.string().max(64)).max(64),
   feePoolShareBps: z.number().int().min(0).max(10_000), buybackSlippageBps: z.number().int().min(10).max(1_000),
 }).refine(s => s.minEdgeBps <= s.edgeBps, { message: 'The lower edge cannot be above the launch edge.' });

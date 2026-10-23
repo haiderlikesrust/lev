@@ -6,11 +6,11 @@ import { LiveLevels } from '@/components/live-levels';
 import { MachineFacts, Rule, Wallets } from '@/components/docs-live';
 import { APP_NAME } from '@/lib/shared/brand';
 
-export const metadata = { title: 'Docs', description: `How ${APP_NAME} leverage packs work: outcomes, multipliers, the pool, fairness and responsible play.` };
+export const metadata = { title: 'Docs', description: `How ${APP_NAME} leverage packs and shorts work: outcomes, multipliers, the pool, fairness and responsible play.` };
 
 const SECTIONS = [
   ['overview', 'Overview'], ['flow', 'How a pack works'], ['outcomes', 'Outcomes'], ['examples', 'Worked examples'],
-  ['levels', 'Risk levels'], ['multipliers', 'How multipliers are set'], ['value', 'Card value & sellback'], ['pool', 'The pool'],
+  ['levels', 'Risk levels'], ['shorts', 'Shorts'], ['multipliers', 'How multipliers are set'], ['value', 'Card value & sellback'], ['pool', 'The pool'],
   ['fairness', 'Fairness & verification'], ['refunds', 'Refunds & problems'], ['responsible', 'Responsible play'], ['faq', 'FAQ'], ['glossary', 'Glossary'],
 ] as const;
 
@@ -97,6 +97,21 @@ export default function DocsPage() {
           <LiveLevels />
         </Section>
 
+        <Section id="shorts" title="Shorts">
+          <p>A <strong>short</strong> is the opposite bet: that the <strong>next card anyone pulls</strong> on a machine comes out under the pack price. You don&apos;t open a pack and you never get a card. Your stake is the pack price.</p>
+          <ul className="list-disc space-y-1.5 pl-5">
+            <li><strong>Next card under 95% of the price:</strong> you win. You get your stake back plus <strong>(price − value) × S</strong>, where S is the machine&apos;s short multiple.</li>
+            <li><strong>Within 5% of the price:</strong> push. You get your stake back.</li>
+            <li><strong>105% of the price or more:</strong> you lose your stake. It goes to the pool.</li>
+          </ul>
+          <p>Example on the $25 machine with S = 2.00: a $20 card is $5 under, so you win $10 and get <strong>$35</strong> back. The cheapest card on that machine pays the most. A $30 card, or a $500 one, loses your $25.</p>
+          <p><strong>Which pull counts:</strong> the first pull on that machine that Collector Crypt stamps at least <Rule name="shortGuard" /> after your payment confirms, by anyone, anywhere on CC. Their pack isn&apos;t touched and they never pay you: your stake and your winnings are with the pool. The waiting gap means nobody can short a pull they&apos;ve already seen.</p>
+          <p><strong>How S is set:</strong> no pack is bought for a short, so Collector Crypt&apos;s cut isn&apos;t in it. S is solved from the same real pulls as the multipliers, so the pool keeps only its edge:</p>
+          <Formula>S = (chance of a hit − edge) / average shortfall of a miss</Formula>
+          <p>So your average result on a short is exactly <strong>minus the pool edge</strong>. S is rounded down to 0.05x. Shorts usually win (about 5 to 8 times in 10, depending on the machine) but win small, and a good card takes the whole stake.</p>
+          <p><strong>Limits:</strong> every short waiting on a machine rides the same next pull, so together they&apos;re one bet: their top payouts share the same cap as one pack&apos;s bonus (<Rule name="cap" />). If no pull comes within <Rule name="shortWait" />, your stake is refunded in full.</p>
+        </Section>
+
         <Section id="multipliers" title="How multipliers are set">
           <p>Multipliers aren&apos;t picked by hand. Every day each one is solved from the machine&apos;s real CC pulls over the last <Rule name="window" />, so the pool keeps only a small, fixed edge.</p>
           <p>Start from a <strong>normal open</strong>: buy the pack and sell the card straight back to CC. On average that returns a little less than the pack price (the &ldquo;normal open&rdquo; column below). Valued the same way, the pool and the leverage player split exactly what a normal open returns, so:</p>
@@ -145,6 +160,7 @@ export default function DocsPage() {
           <ul className="list-disc space-y-1.5 pl-5">
             <li>You have 2 minutes to approve the payment in your wallet. If you don&apos;t, the pack expires and nothing is charged.</li>
             <li>If CC won&apos;t sell from the machine (&ldquo;machine is low/off&rdquo;), or the pool can no longer cover the pack&apos;s top bonus, you&apos;re refunded the full pack price automatically.</li>
+            <li>A short with no pull on its machine within <Rule name="shortWait" /> is refunded in full.</li>
             <li>If something unexpected happens, the pack goes to manual review. Your payment is safe, and the team either finishes the pack or refunds it. A refund only happens if no pack was bought.</li>
           </ul>
         </Section>
@@ -166,6 +182,8 @@ export default function DocsPage() {
             ['Why are the multipliers different on each machine?', 'Each machine has different odds, card values and buyback rates, so the multiplier that leaves the pool the same small edge differs too.'],
             ['Why is a level locked?', 'Either more pulls are needed to price it fairly, or the pool needs to grow before it can pay that level’s biggest bonuses. The lock shows which.'],
             ['Is my average result positive?', 'No. Like a normal open, every level returns less than you pay on average. Leverage spreads your result out: more total losses, bigger wins.'],
+            ['What is a short?', 'A bet that the next card pulled on a machine is under the pack price. It wins often but small; a good card takes your whole stake.'],
+            ['Am I betting against another player?', 'Your short rides another player’s pull, but their pack isn’t touched and they never pay you. Your stake and winnings are with the pool.'],
             ['Which wallets work?', 'Phantom and Solflare. You need USDC for the pack and a little SOL (about 0.002) for the network fee.'],
             ['What if the card’s value isn’t known yet?', 'The pack waits until CC records it, well inside CC’s 72-hour buyback window. If it takes too long, the team settles it by hand.'],
             ['Where does the bonus money come from?', 'From losing packs’ sellbacks, plus 85% of our coin’s creator fees, held in the separate leverage pool.'],
@@ -189,6 +207,8 @@ export default function DocsPage() {
               ['Pool edge', 'The small share of each pack price the pool keeps on average.'],
               ['Bonus cap', 'The most a single pack can pay as a bonus, fixed when you confirm.'],
               ['Normal open', 'Opening the pack without leverage and selling the card straight back.'],
+              ['Short', 'A bet that the next pull on a machine is under the pack price.'],
+              ['Short multiple (S)', 'What a short wins per $1 the next card is under the price.'],
             ].map(([term, def]) => (
               <div key={term} className="contents"><dt className="font-semibold">{term}</dt><dd className="text-muted">{def}</dd></div>
             ))}

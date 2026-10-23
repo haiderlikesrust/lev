@@ -8,11 +8,12 @@ import type { LevPool } from './pool';
 import type { Limits } from './limits';
 import type { SettingsStore } from './settings';
 import type { Collector } from './collector';
-import { loadCalibration } from './calibration';
+import { loadCalibration, loadShortCalibration } from './calibration';
 import { offer, type Offer } from '../shared/calibration';
 import { LEVELS, LEVEL_NAME, bonusMicros, classify, floorRefundMicros, type Level, type Outcome } from '../shared/leverage';
-import { machineDef } from '../shared/machines';
-import type { OrderStatus, OrderView, SettlementLinks } from '../shared/types';
+import { shortOffer, shortOutcome, shortPayoutMicros, type Side } from '../shared/short';
+import { machineDef, tierOf } from '../shared/machines';
+import type { CardView, OrderStatus, OrderView, PullView, SettlementLinks } from '../shared/types';
 
 /** Runs a critical section; the app passes the coordinator's Serial queue, tests run it directly. */
 export type Runner = <T>(fn: () => Promise<T>) => Promise<T>;
@@ -36,7 +37,11 @@ export function isTransient(error: unknown) {
   if (e instanceof ApiError) return e.status >= 500 || e.status === 429;
   return ['AbortError', 'TimeoutError'].includes(e?.name) || /fetch failed|network|ECONN|ETIMEDOUT|EAI_AGAIN|socket hang up|timed out|already being processed|\b429\b|too many requests|rate.?limit/i.test(e?.message ?? '');
 }
-const OPEN: OrderStatus[] = ['awaiting_payment', 'paying', 'paid', 'buying', 'settling', 'refunding'];
+const OPEN: OrderStatus[] = ['awaiting_payment', 'paying', 'paid', 'buying', 'watching', 'settling', 'refunding'];
+/** A CC pull's id is `<card mint>:<time>`. */
+const mintOf = (pullId: string) => /^[1-9A-HJ-NP-Za-km-z]{32,44}:/.test(pullId) ? pullId.split(':')[0] : null;
+
+type Pull = { id: string; mint: string | null; valueMicros: number; pulledAt: number; name: string | null; image: string | null; tier: number | null };
 
 type OrderData = {
   payment: BuiltPayment; machineName: string; quotedAt: number; expiresAt: number;
@@ -53,9 +58,12 @@ type OrderData = {
   unpaidAttempts?: number[];
   /** The status an order had when it was handed to review, so Retry resumes exactly there. */
   reviewFrom?: OrderStatus;
+  /** Shorts: CC pulls stamped after `watchFrom` count; the pull the short rode; what it pays on top of the stake. */
+  watchFrom?: number; pull?: Pull; payoutMicros?: number;
+  stakeBackSignature?: string; payoutSignature?: string; stakeToPoolSignature?: string;
 };
 type Row = {
-  id: string; wallet: string; status: OrderStatus; code: string; level: Level; price_micros: string; multiplier_bps: number; floor_bps: number;
+  id: string; wallet: string; status: OrderStatus; code: string; side: Side; level: Level; price_micros: string; multiplier_bps: number; floor_bps: number;
   cap_micros: string; payment_signature: string | null; data: OrderData; created_at: string; error: string | null;
 };
 
@@ -65,9 +73,18 @@ type Row = {
  *   loss → LEV_OPS sells it back, the USDC lands in LEV_POOL, and a half-risk buyer gets the floor;
  *   push → the card goes to the buyer;
  *   win  → the card goes to the buyer, and LEV_POOL pays the bonus.
+ * Shorts share the pipeline but buy no pack: the stake waits in LEV_OPS while the order watches CC's feed,
+ * and the first pull on its machine stamped after the payment decides it (see `watch` and `settleShort`).
  * Structure ported from Pullback (server/orders.ts): every step is resumable and idempotent.
  */
 export class Orders {
+  /**
+   * How shorts watch CC's feed. On mainnet the guard comes from settings; practice mode and tests shorten
+   * everything. `lagMs` gives the feed a moment to list a pull stamped just before the one found.
+   */
+  shortTiming: { guardMs: number | null; lagMs: number; pollMs: number } = { guardMs: null, lagMs: 10_000, pollMs: 5_000 };
+  private polled = new Map<string, number>();
+
   constructor(readonly db: Database, readonly jobs: Jobs, readonly solana: Solana, readonly packs: PackProvider, readonly pool: LevPool,
     readonly limits: Limits, readonly settings: SettingsStore, readonly collector: Collector) {}
 
@@ -84,42 +101,71 @@ export class Orders {
     return { def, config, offer: o };
   }
 
+  /** The live short offer for one machine. */
+  async quoteShort(code: string, free?: number) {
+    const def = machineDef(code);
+    if (!def) throw httpError(404, 'That machine is not offered here.');
+    const s = this.settings.current;
+    if (!s.shortsEnabled || s.disabledMachines.includes(code)) throw httpError(409, 'Shorts are not available on this machine right now.');
+    const config = (await this.collector.configs()).find(c => c.code === code);
+    const row = (await loadShortCalibration(this.db)).find(r => r.code === code);
+    if (!config || !row) throw httpError(409, 'This machine is still being calibrated.');
+    const o = shortOffer(row, { priceMicros: config.priceUsd * 1_000_000, freeMicros: free ?? await this.pool.free(), minValueMicros: config.tierRanges.common.start * 1_000_000, now: Date.now(), settings: s });
+    return { def, config, offer: o };
+  }
+
+  private terms(side: Side, code: string, level: Level) { return side === 'short' ? this.quoteShort(code) : this.quote(code, level); }
+
   /**
-   * Starts one leverage pack: locks its terms and returns the USDC payment for the wallet to sign.
+   * Starts one leverage pack (or short): locks its terms and returns the USDC payment for the wallet to sign.
    * Slow calls (catalog, calibration, wallet funds, blockhash) happen first; only the DB check-and-insert
    * runs inside `run`. No pool money is reserved until the buyer actually pays.
    */
-  async create(wallet: string, code: string, level: Level, acceptedRisk: boolean, run: Runner = direct) {
-    if (acceptedRisk !== true) throw httpError(400, 'Confirm the HIGH RISK warning for this pack first.');
+  async create(wallet: string, code: string, level: Level, acceptedRisk: boolean, run: Runner = direct, side: Side = 'long') {
+    if (acceptedRisk !== true) throw httpError(400, `Confirm the HIGH RISK warning for this ${side === 'short' ? 'short' : 'pack'} first.`);
+    if (side !== 'long' && side !== 'short') throw httpError(400, 'Unknown side.');
+    // A short has one risk level: a pull that hits takes the whole stake.
+    if (side === 'short') level = 'full';
     if (!LEVELS.includes(level)) throw httpError(400, 'Unknown risk level.');
     if (!this.solana.canSpend) throw httpError(503, 'Leverage packs open at launch. Nothing was charged.');
     const pause = await this.pool.pauseReason();
     if (pause) throw httpError(503, pause);
-    const { def, config, offer: first } = await this.quote(code, level);
+    const { def, config, offer: first } = await this.terms(side, code, level);
     if (!first.available) throw httpError(409, first.reason ?? 'This level is not available right now.');
     if (!(await this.packs.openMachines()).has(code)) throw httpError(409, 'Collector Crypt is not selling from this machine right now. Nothing was charged.');
     const price = config.priceUsd * 1_000_000;
     await this.limits.check(wallet, price, first.maxLossMicros);
     const funds = await this.solana.walletFunds(wallet);
-    if (!funds.usdcAccount || funds.usdcMicros < BigInt(price)) throw httpError(400, `This pack costs ${dollars(price)} in USDC and this wallet has ${dollars(Number(funds.usdcMicros))}. Add USDC and try again.`);
+    if (!funds.usdcAccount || funds.usdcMicros < BigInt(price)) throw httpError(400, `This ${side === 'short' ? 'short' : 'pack'} costs ${dollars(price)} in USDC and this wallet has ${dollars(Number(funds.usdcMicros))}. Add USDC and try again.`);
     if (funds.lamports < BUYER_MIN_LAMPORTS) throw httpError(400, 'This wallet needs a little SOL (0.002 is plenty) to pay the Solana network fee.');
     const id = randomUUID(), payment = await this.solana.buildUserPayment(wallet, price, `lev-${id}`);
     return run(async () => {
       // A cancelled unpaid order no longer blocks a new one; it still settles if a payment lands before it expires.
       const waiting = (await this.db.query("SELECT 1 FROM orders WHERE wallet=$1 AND status IN ('awaiting_payment','paying') AND NOT COALESCE((data->>'cancelled')::boolean, FALSE)", [wallet])).rows[0];
       if (waiting) throw httpError(409, 'Finish or cancel your current pack before starting another.');
-      const now = await this.quote(code, level);
+      const now = await this.terms(side, code, level);
       if (!now.offer.available || now.offer.multiplierBps !== first.multiplierBps || now.offer.capMicros < first.capMicros * 0.99) throw httpError(409, 'The terms just changed. Please review them and confirm again.');
       const at = Date.now(), o = first;
       const data: OrderData = {
         payment, machineName: def.name, quotedAt: at, expiresAt: at + PAYMENT_WINDOW_MS, acceptedRiskAt: at, maxLossMicros: o.maxLossMicros,
         offer: { edgeBps: o.edgeBps, poolEdge: o.poolEdge, playerReturn: o.playerReturn, normalReturn: o.normalReturn, pLoss: o.pLoss, pPush: o.pPush, pWin: o.pWin },
       };
-      await this.db.query('INSERT INTO orders(id,wallet,status,code,level,price_micros,multiplier_bps,floor_bps,cap_micros,data,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)',
-        [id, wallet, 'awaiting_payment', code, level, price, o.multiplierBps, o.floorBps, o.capMicros, JSON.stringify(data), at]);
-      await audit(this.db, 'order-created', { id, wallet, code, level, multiplierBps: o.multiplierBps, capMicros: o.capMicros, acceptedRiskAt: at });
+      await this.db.query('INSERT INTO orders(id,wallet,status,code,side,level,price_micros,multiplier_bps,floor_bps,cap_micros,data,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)',
+        [id, wallet, 'awaiting_payment', code, side, level, price, o.multiplierBps, o.floorBps, o.capMicros, JSON.stringify(data), at]);
+      await audit(this.db, 'order-created', { id, wallet, code, side, level, multiplierBps: o.multiplierBps, capMicros: o.capMicros, acceptedRiskAt: at });
       return { order: await this.get(id, wallet), transaction: payment.transaction };
     });
+  }
+
+  /**
+   * Every short waiting on a machine rides the same next pull, so together they are one bet: their top payouts
+   * share the cap one long pack's bonus gets.
+   */
+  private async checkShortExposure(row: Row) {
+    const riding = Number((await this.db.query<{ total: string }>(
+      "SELECT COALESCE(SUM(r.micros),0)::text AS total FROM reservations r JOIN orders o ON o.id=r.id WHERE r.released_at IS NULL AND o.side='short' AND o.code=$1 AND o.id<>$2", [row.code, row.id])).rows[0].total);
+    const limit = Math.floor(Math.max(0, await this.pool.free()) * this.settings.current.capBps / 10_000);
+    if (riding + Number(row.cap_micros) > limit) throw httpError(409, 'Too many shorts are riding the next pull on this machine. Try again in a minute. Nothing was charged.');
   }
 
   /** Reserves the pack's largest bonus (refused if the pool can't cover it, before any money moves), then broadcasts the signed payment. */
@@ -131,6 +177,7 @@ export class Orders {
       if (Date.now() > row.data.expiresAt) throw httpError(409, 'This pack expired. Start a new one.');
       if (!this.solana.canSpend) throw httpError(503, 'Leverage packs open at launch. Nothing was charged.');
       if (signed === 'practice' && this.solana.live) throw httpError(400, 'Sign the payment with your wallet.');
+      if (row.side === 'short') await this.checkShortExposure(row);
       await this.pool.reserve(id, Number(row.cap_micros));
       return row;
     });
@@ -200,14 +247,19 @@ export class Orders {
         row.payment_signature = state.signature;
         // pay() normally reserved already; a payment the wallet broadcast on its own reserves now if the pool still can.
         // If it can't, the pack is refunded rather than bought with a bonus the pool couldn't pay.
-        try { await this.pool.reserve(row.id, Number(row.cap_micros)); }
-        catch {
+        try {
+          if (row.side === 'short' && !(await this.db.query('SELECT 1 FROM reservations WHERE id=$1 AND released_at IS NULL', [row.id])).rows.length) await this.checkShortExposure(row);
+          await this.pool.reserve(row.id, Number(row.cap_micros));
+        } catch {
           await record(this.db, { id: `order:${row.id}:payment`, bucket: 'ops', kind: 'payment', micros: price, signature: state.signature, ref: row.id });
-          return this.save(row, 'refunding', { refundReason: 'The pool could no longer cover this pack\'s top bonus.' });
+          return this.save(row, 'refunding', { refundReason: row.side === 'short' ? 'The pool could no longer cover this short\'s top payout.' : 'The pool could no longer cover this pack\'s top bonus.' });
         }
         await record(this.db, { id: `order:${row.id}:payment`, bucket: 'ops', kind: 'payment', micros: price, signature: state.signature, ref: row.id });
+        // A short counts only pulls CC stamps after the guard, so nobody can short a pull they have already seen.
+        if (row.side === 'short') return this.save(row, 'watching', { watchFrom: Date.now() + this.guardMs(), message: `Payment confirmed. Waiting for the next pull on ${d.machineName}.`, failures: 0 });
         return this.save(row, 'paid', { message: 'Payment confirmed. Buying your pack.', failures: 0 });
       }
+      case 'watching': return this.watch(row);
       case 'paid':
       case 'buying': {
         const attempt = d.attempt ?? 0, purchaseId = `${row.id}-${attempt}`;
@@ -238,7 +290,7 @@ export class Orders {
         await record(this.db, { id: `order:${row.id}:pack`, bucket: 'ops', kind: 'pack', micros: -price, signature: result.signature, ref: row.id });
         return this.save(row, 'settling', { purchaseId, memo: result.memo, packSignature: result.signature, card: result.card, valueMicros: value === null ? undefined : Math.round(value * 1_000_000), message: 'Pack opened. Settling.', failures: 0 });
       }
-      case 'settling': return this.settle(row);
+      case 'settling': return row.side === 'short' ? this.settleShort(row) : this.settle(row);
       case 'refunding': {
         const signature = await this.solana.pay('ops', `order:${row.id}:refund`, row.wallet, price);
         await record(this.db, { id: `order:${row.id}:refund`, bucket: 'ops', kind: 'refund', micros: -price, signature, ref: row.id });
@@ -293,11 +345,80 @@ export class Orders {
       ? `This card was worth ${dollars(d.valueMicros!)}, below the pack price, so it was sold back to Collector Crypt for ${dollars(d.sellbackMicros!)}.${d.floorMicros ? ` Your half-risk floor of ${dollars(d.floorMicros)} was sent to you.` : ''}`
       : d.outcome === 'push' ? `This card was worth ${dollars(d.valueMicros!)}, about the pack price. It is in your wallet.`
       : `This card was worth ${dollars(d.valueMicros!)}. It is in your wallet, with a ${dollars(d.bonusMicros!)} bonus.`;
+    await this.complete(row, message);
+  }
+
+  private guardMs() { return this.shortTiming.guardMs ?? this.settings.current.shortGuardSeconds * 1_000; }
+
+  /**
+   * A paid short: finds the first CC pull on its machine stamped after `watchFrom`, polling CC's feed while it
+   * waits. With no pull after `shortWaitMinutes` (a quiet machine, or the feed is down) the stake is refunded.
+   * TODO: CC's feed has no VRF request slot, so ordering relies on its `created_at`; confirm on devnet that it is
+   * stamped no later than the reveal (the guard covers a short lag).
+   */
+  private async watch(row: Row) {
+    const d = row.data, now = Date.now();
+    if (now - (this.polled.get(row.code) ?? 0) >= this.shortTiming.pollMs) {
+      this.polled.set(row.code, now);
+      await this.collector.insert(await this.packs.recentPulls(row.code));
+    }
+    const next = (await this.db.query<{ id: string; value_micros: string; pulled_at: string; tier: number | null; image: string | null; name: string | null }>(
+      'SELECT id, value_micros::text, pulled_at::text, tier, image, name FROM cc_pulls WHERE code=$1 AND pulled_at > $2 ORDER BY pulled_at, id LIMIT 1', [row.code, d.watchFrom])).rows[0];
+    if (!next) {
+      const wait = this.settings.current.shortWaitMinutes;
+      if (now - d.watchFrom! > wait * 60_000) return this.save(row, 'refunding', { refundReason: `No pull came on this machine within ${wait} minutes.` });
+      return;
+    }
+    if (now - Number(next.pulled_at) < this.shortTiming.lagMs) return;
+    const pull: Pull = { id: next.id, mint: mintOf(next.id), valueMicros: Number(next.value_micros), pulledAt: Number(next.pulled_at), name: next.name, image: next.image, tier: next.tier };
+    await audit(this.db, 'short-pull', { id: row.id, pull: pull.id, valueMicros: pull.valueMicros, pulledAt: pull.pulledAt });
+    return this.save(row, 'settling', { pull, valueMicros: pull.valueMicros, message: 'The next pull is in. Settling.', failures: 0 });
+  }
+
+  /** Decides a short once from the pull it rode, then moves the stake and any payout; each step is idempotent. */
+  private async settleShort(row: Row) {
+    const price = Number(row.price_micros);
+    if (!row.data.outcome) {
+      const outcome = shortOutcome(price, row.data.valueMicros!);
+      await this.save(row, row.status, { outcome, payoutMicros: shortPayoutMicros(price, row.data.valueMicros!, row.multiplier_bps, Number(row.cap_micros)) });
+    }
+    const d = row.data;
+    if (d.outcome === 'loss') {
+      if (!d.stakeToPoolSignature) {
+        const signature = await this.solana.pay('ops', `order:${row.id}:stake-to-pool`, this.solana.poolAddress!, price);
+        await record(this.db, { id: `order:${row.id}:stake-out`, bucket: 'ops', kind: 'short-stake', micros: -price, signature, ref: row.id });
+        await record(this.db, { id: `order:${row.id}:stake-in`, bucket: 'pool', kind: 'short-stake', micros: price, signature, ref: row.id });
+        this.pool.invalidate();
+        await this.save(row, row.status, { stakeToPoolSignature: signature });
+      }
+    } else {
+      if (!d.stakeBackSignature) {
+        const signature = await this.solana.pay('ops', `order:${row.id}:stake-back`, row.wallet, price);
+        await record(this.db, { id: `order:${row.id}:stake-back`, bucket: 'ops', kind: 'stake-back', micros: -price, signature, ref: row.id });
+        await this.save(row, row.status, { stakeBackSignature: signature });
+      }
+      if (d.outcome === 'win' && row.data.payoutMicros! > 0 && !row.data.payoutSignature) {
+        const signature = await this.solana.pay('pool', `order:${row.id}:payout`, row.wallet, row.data.payoutMicros!);
+        await record(this.db, { id: `order:${row.id}:payout`, bucket: 'pool', kind: 'short-payout', micros: -row.data.payoutMicros!, signature, ref: row.id });
+        await this.save(row, row.status, { payoutSignature: signature });
+      }
+    }
+    const v = row.data.valueMicros!;
+    const message = d.outcome === 'win'
+      ? `The next pull on ${d.machineName} was worth ${dollars(v)}, ${dollars(price - v)} under the pack price. Your ${dollars(price)} stake is back, plus ${dollars(row.data.payoutMicros!)}.`
+      : d.outcome === 'push' ? `The next pull on ${d.machineName} was worth ${dollars(v)}, about the pack price. Your ${dollars(price)} stake is back in your wallet.`
+      : `The next pull on ${d.machineName} was worth ${dollars(v)}, above the pack price, so your ${dollars(price)} stake went to the pool.`;
+    await this.complete(row, message);
+  }
+
+  /** Logs the settlement publicly, frees the reservation and closes the order, all at once. */
+  private async complete(row: Row, message: string) {
+    const d = row.data;
     await atomic(this.db, async () => {
-      await this.db.query(`INSERT INTO settlements(order_id,wallet,code,level,outcome,price_micros,value_micros,multiplier_bps,bonus_micros,floor_micros,sellback_micros,memo,card,links,settled_at)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT(order_id) DO NOTHING`,
-        [row.id, row.wallet, row.code, row.level, d.outcome, price, d.valueMicros, row.multiplier_bps, d.bonusMicros ?? 0, d.floorMicros ?? 0, d.sellbackMicros ?? 0, d.memo ?? null,
-          JSON.stringify(cardView(d.card)), JSON.stringify(links(row)), Date.now()]);
+      await this.db.query(`INSERT INTO settlements(order_id,wallet,code,level,side,outcome,price_micros,value_micros,multiplier_bps,bonus_micros,floor_micros,sellback_micros,memo,card,links,pull,settled_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT(order_id) DO NOTHING`,
+        [row.id, row.wallet, row.code, row.level, row.side, d.outcome, Number(row.price_micros), d.valueMicros, row.multiplier_bps, (row.side === 'short' ? d.payoutMicros : d.bonusMicros) ?? 0,
+          d.floorMicros ?? 0, d.sellbackMicros ?? 0, d.memo ?? null, JSON.stringify(cardOf(d)), JSON.stringify(links(row)), d.pull ? JSON.stringify(pullView(d.pull)) : null, Date.now()]);
       await this.pool.release(row.id);
       await this.save(row, 'complete', { message });
     });
@@ -333,35 +454,44 @@ export class Orders {
     if (action === 'refund') {
       if (!paid) throw httpError(409, 'This payment was never confirmed, so there is nothing to refund. Use Retry to re-check it.');
       if (d.card) throw httpError(409, 'The pack was bought; use Retry to finish settling instead of refunding.');
+      if (d.pull) throw httpError(409, 'This short already rode its pull; use Retry to finish settling instead of refunding.');
       const sent = await this.sentToProvider(row);
       if (sent !== null) throw httpError(409, `A pack payment was sent to Collector Crypt for this order (attempt ${sent}). Check it on Solscan; use Retry instead of refunding.`);
       return this.save(row, 'refunding', { refundReason: 'The pack could not be completed.', failures: 0, retryAt: 0 });
     }
     const after = (status?: OrderStatus) => status && !['awaiting_payment', 'paying', 'review'].includes(status);
-    const resume: OrderStatus = !paid ? (row.payment_signature ? 'paying' : 'awaiting_payment') : after(d.reviewFrom) ? d.reviewFrom! : d.card ? 'settling' : 'buying';
+    const resume: OrderStatus = !paid ? (row.payment_signature ? 'paying' : 'awaiting_payment') : after(d.reviewFrom) ? d.reviewFrom!
+      : row.side === 'short' ? (d.pull ? 'settling' : 'watching') : d.card ? 'settling' : 'buying';
     return this.save(row, resume, { failures: 0, retryAt: 0, message: 'Retrying.' });
   }
 
   private view(row: Row): OrderView {
     const d = row.data;
     return {
-      id: row.id, status: row.status, wallet: row.wallet, code: row.code, machineName: d.machineName, level: row.level,
+      id: row.id, status: row.status, wallet: row.wallet, code: row.code, machineName: d.machineName, side: row.side, level: row.level,
       priceUsd: usd(Number(row.price_micros)), multiplierBps: row.multiplier_bps, floorBps: row.floor_bps, capUsd: usd(Number(row.cap_micros)), maxLossUsd: usd(d.maxLossMicros),
       playerReturn: d.offer.playerReturn, normalReturn: d.offer.normalReturn, createdAt: Number(row.created_at), expiresAt: d.expiresAt,
-      card: cardView(d.card), valueUsd: d.valueMicros === undefined ? null : usd(d.valueMicros),
+      card: cardOf(d), valueUsd: d.valueMicros === undefined ? null : usd(d.valueMicros),
       // The outcome shows only once settled, so the reveal and the result arrive together.
       outcome: row.status === 'complete' ? d.outcome ?? null : null,
-      bonusUsd: usd(d.bonusMicros ?? 0), floorUsd: usd(d.floorMicros ?? 0), sellbackUsd: usd(d.sellbackMicros ?? 0),
+      // A short's payout shows as its bonus: what the pool paid on top of the stake.
+      bonusUsd: usd((row.side === 'short' ? d.payoutMicros : d.bonusMicros) ?? 0), floorUsd: usd(d.floorMicros ?? 0), sellbackUsd: usd(d.sellbackMicros ?? 0),
       // Review reasons can be internal (RPC or provider errors); the buyer only sees that it is being checked.
-      message: row.status === 'review' ? 'This pack needs a manual check. Your payment is safe and the team has been alerted.' : d.message ?? null,
+      message: row.status === 'review' ? `This ${row.side === 'short' ? 'short' : 'pack'} needs a manual check. Your payment is safe and the team has been alerted.` : d.message ?? null,
       links: links(row), memo: d.memo ?? null, vrfUrl: d.memo ? this.packs.vrfUrl(d.memo) : null,
+      watchFrom: d.watchFrom ?? null, pull: d.pull ? pullView(d.pull) : null,
     };
   }
 }
 
 const cardView = (card: Card | undefined) => card ? { mint: card.mint, name: card.name, image: card.image, rarity: card.rarity } : null;
+/** The card a pack opened, or the one a short rode (someone else's pull). */
+const cardOf = (d: OrderData): CardView | null => d.card ? cardView(d.card)
+  : d.pull ? { mint: d.pull.mint ?? d.pull.id, name: d.pull.name ?? 'Card', image: d.pull.image, rarity: tierOf(d.pull.tier) } : null;
+const pullView = (pull: Pull): PullView => ({ id: pull.id, mint: pull.mint, pulledAt: pull.pulledAt });
 const links = (row: Row): SettlementLinks => ({
   payment: row.payment_signature, packPayment: row.data.packSignature ?? null, cardDelivery: row.data.card?.transferSignature ?? null,
   sellback: row.data.sellSignature ?? null, floor: row.data.floorSignature ?? null, nftTransfer: row.data.nftSignature ?? null,
   bonus: row.data.bonusSignature ?? null, refund: row.data.refundSignature ?? null,
+  stakeBack: row.data.stakeBackSignature ?? null, payout: row.data.payoutSignature ?? null, stakeToPool: row.data.stakeToPoolSignature ?? null,
 });

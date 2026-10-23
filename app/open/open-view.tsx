@@ -9,8 +9,9 @@ import { RiskConfirm } from '@/components/risk-confirm';
 import { Reveal } from '@/components/reveal';
 import { MachineArt } from '@/components/machine-art';
 import { apiGet, apiPost, chance, fromBase64, mult, pct, toBase64, usd, usdShort, usePoll } from '@/lib/client/api';
+import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import { LEVELS, LEVEL_NAME, type Level } from '@/lib/shared/leverage';
-import type { ConfigView, MachineView, MeView, OfferView, OrderView } from '@/lib/shared/types';
+import type { ConfigView, MachineView, MeView, OfferView, OrderView, Side } from '@/lib/shared/types';
 
 const FINAL: OrderView['status'][] = ['complete', 'refunded', 'expired', 'review'];
 
@@ -19,17 +20,18 @@ export function OpenView() {
   const { me, signedIn, signIn, signingIn, setMe, practice } = useSession();
   const { connected, signTransaction } = useWallet();
   const { setVisible } = useWalletModal();
-  // Deep links from the home table: /open?machine=pokemon_25&level=full. Nothing renders from these before
-  // the config loads on the client, so reading the URL here can't cause a hydration mismatch.
+  // Deep links from the home table: /open?machine=pokemon_25&level=full (or &side=short). Nothing renders from
+  // these before the config loads on the client, so reading the URL here can't cause a hydration mismatch.
   const [picked, setCode] = useState<string | null>(() => typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('machine'));
+  const [side, setSide] = useState<Side>(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('side') === 'short' ? 'short' : 'long');
   const [level, setLevel] = useState<Level>(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('level') === 'full' ? 'full' : 'half');
   const [confirming, setConfirming] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   const [order, setOrder] = useState<OrderView | null>(null);
   // A clock for the cool-down banner, ticking in the background rather than read during render.
   const [now, setNow] = useState(0);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 15_000); return () => clearInterval(timer); }, []);
-  // Until the player picks one, the first machine with a live level.
-  const code = picked ?? config?.machines.find(m => m.offers.some(o => o.available))?.code ?? config?.machines[0]?.code ?? null;
+  // Until the player picks one, the first machine with a live level on this side.
+  const code = picked ?? config?.machines.find(m => side === 'short' ? m.short?.available : m.offers.some(o => o.available))?.code ?? config?.machines[0]?.code ?? null;
 
   // Follow an order until it settles.
   useEffect(() => {
@@ -40,7 +42,7 @@ export function OpenView() {
   useEffect(() => { if (order && FINAL.includes(order.status)) { void reload(); void apiGet<MeView>('/api/me').then(setMe).catch(() => {}); } }, [order, reload, setMe]);
 
   const machine = config?.machines.find(m => m.code === code) ?? null;
-  const offer = machine?.offers.find(o => o.level === level) ?? null;
+  const offer = (side === 'short' ? machine?.short : machine?.offers.find(o => o.level === level)) ?? null;
   const signed = me?.wallet ? me : null;
   const cooldownUntil = signed && 'limits' in signed ? signed.limits.cooldownUntil : null;
   const blocked = useMemo(() => {
@@ -58,7 +60,7 @@ export function OpenView() {
     setBusy(true); setError(null);
     try {
       if (!signTransaction) throw new Error('This wallet cannot sign transactions. Try Phantom or Solflare.');
-      const { order: created, transaction } = await apiPost<{ order: OrderView; transaction: string }>('/api/orders', { code: machine.code, level: offer.level, acceptedRisk: true });
+      const { order: created, transaction } = await apiPost<{ order: OrderView; transaction: string }>('/api/orders', { code: machine.code, side: offer.side, level: offer.level, acceptedRisk: true });
       let signedTx: string;
       try { signedTx = toBase64((await signTransaction(VersionedTransaction.deserialize(fromBase64(transaction)))).serialize()); }
       catch { await apiPost(`/api/orders/${created.id}/cancel`).catch(() => {}); throw new Error('The payment was not approved in your wallet. Nothing was charged.'); }
@@ -84,19 +86,35 @@ export function OpenView() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <HighRisk />
-          <h1 className="mt-3 text-3xl font-extrabold sm:text-4xl">Open a leverage pack</h1>
-          <p className="mt-1 text-muted">Pick a machine and a level. You&apos;ll see every outcome before you confirm.</p>
+          <h1 className="mt-3 text-3xl font-extrabold sm:text-4xl">{side === 'short' ? 'Short the next pull' : 'Open a leverage pack'}</h1>
+          <p className="mt-1 text-muted">{side === 'short'
+            ? 'Bet that the next card anyone pulls on a machine comes out under the pack price. You don’t open a pack.'
+            : 'Pick a machine and a level. You’ll see every outcome before you confirm.'}</p>
         </div>
+        <SideToggle side={side} onChange={next => { setSide(next); setError(null); }} />
       </div>
 
       <div>
         <Label>1 · Machine</Label>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {config.machines.map(m => <MachineTile key={m.code} m={m} selected={m.code === code} onSelect={() => setCode(m.code)} />)}
+          {config.machines.map(m => <MachineTile key={m.code} m={m} side={side} selected={m.code === code} onSelect={() => setCode(m.code)} />)}
         </div>
       </div>
 
-      {machine && (
+      {machine && side === 'short' && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1.15fr]">
+          <div>
+            <Label>2 · How much you win</Label>
+            <div className="mt-3">{offer ? <ShortExample machine={machine} offer={offer} /> : <Card><p className="text-sm text-muted">Not calibrated yet.</p></Card>}</div>
+          </div>
+          <div>
+            <Label>3 · What can happen</Label>
+            <div className="mt-3">{offer ? <ShortOutcomes machine={machine} offer={offer} /> : <Card><p className="text-sm text-muted">Not calibrated yet.</p></Card>}</div>
+          </div>
+        </div>
+      )}
+
+      {machine && side === 'long' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1.15fr]">
           <div>
             <Label>2 · Level</Label>
@@ -123,14 +141,16 @@ export function OpenView() {
             {blocked === 'cooldown' && <span><strong>Take a break.</strong> After {config.rules.cooldownLosses} losses in a row, leverage packs open again for this wallet at {new Date(cooldownUntil!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.</span>}
             {blocked === 'paused' && <span>{config.pool.pauseReason}</span>}
             {!blocked && !offer.available && <span className="text-muted">{offer.reason}</span>}
-            {!blocked && offer.available && <span>${machine.priceUsd} {machine.name} · {LEVEL_NAME[offer.level]} · <strong>{mult(offer.multiplierBps)}</strong></span>}
+            {!blocked && offer.available && (offer.side === 'short'
+              ? <span>Short the next ${machine.priceUsd} {machine.name} pull · <strong>{mult(offer.multiplierBps)}</strong> per $1 under</span>
+              : <span>${machine.priceUsd} {machine.name} · {LEVEL_NAME[offer.level]} · <strong>{mult(offer.multiplierBps)}</strong></span>)}
             {error && <p className="mt-2 text-loss">{error}</p>}
           </div>
           <div className="shrink-0">
             {blocked === 'connect' && <Button onClick={() => setVisible(true)}>Connect wallet</Button>}
             {blocked === 'sign-in' && <Button onClick={() => void signIn().catch(e => setError((e as Error).message))} disabled={signingIn}>{signingIn ? 'Signing…' : 'Sign in'}</Button>}
             {blocked === 'opt-in' && <Button variant="red" onClick={() => void optIn()}>Turn on leverage packs</Button>}
-            {!blocked && <Button variant="red" disabled={!offer.available} onClick={() => { setError(null); setConfirming(true); }}>Open with leverage</Button>}
+            {!blocked && <Button variant="red" disabled={!offer.available} onClick={() => { setError(null); setConfirming(true); }}>{offer.side === 'short' ? 'Short the next pull' : 'Open with leverage'}</Button>}
           </div>
         </Card>
       )}
@@ -141,8 +161,25 @@ export function OpenView() {
   );
 }
 
-function MachineTile({ m, selected, onSelect }: { m: MachineView; selected: boolean; onSelect: () => void }) {
-  const live = m.offers.filter(o => o.available);
+function SideToggle({ side, onChange }: { side: Side; onChange: (side: Side) => void }) {
+  const options = [
+    { id: 'long' as const, label: 'Long', icon: ArrowUpRight, hint: 'Bet your card is good', on: 'bg-poke-red text-white shadow-card' },
+    { id: 'short' as const, label: 'Short', icon: ArrowDownRight, hint: 'Bet the next card is bad', on: 'bg-poke-blue text-white shadow-card' },
+  ];
+  return (
+    <div className="flex rounded-full bg-mist p-1" role="tablist" aria-label="Long or short">
+      {options.map(o => (
+        <button key={o.id} role="tab" aria-selected={side === o.id} onClick={() => onChange(o.id)} title={o.hint}
+          className={`flex items-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-semibold transition ${side === o.id ? o.on : 'text-muted hover:text-ink'}`}>
+          <o.icon size={16} strokeWidth={2.5} aria-hidden />{o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MachineTile({ m, side, selected, onSelect }: { m: MachineView; side: Side; selected: boolean; onSelect: () => void }) {
+  const live = side === 'short' ? (m.short?.available ? [m.short] : []) : m.offers.filter(o => o.available);
   return (
     <button onClick={onSelect} aria-pressed={selected}
       className={`group flex flex-col overflow-hidden rounded-3xl border-2 bg-white text-left shadow-card transition ${selected ? 'border-poke-red ring-4 ring-poke-red/10' : 'border-transparent hover:-translate-y-0.5 hover:shadow-lift'}`}>
@@ -153,7 +190,9 @@ function MachineTile({ m, selected, onSelect }: { m: MachineView; selected: bool
         <div className="flex items-baseline justify-between gap-2"><span className="font-display text-xl font-extrabold tabular-nums">${m.priceUsd}</span><span className="truncate text-xs text-muted">{m.name}</span></div>
         <div className="mt-2 flex flex-wrap gap-1">
           {live.length ? live.map(o => (
-            <span key={o.level} className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${o.level === 'full' ? 'bg-poke-red/10 text-poke-red' : 'bg-poke-blue/10 text-poke-blue'}`}>{o.level === 'full' ? 'Full' : 'Half'} {mult(o.multiplierBps)}</span>
+            o.side === 'short'
+              ? <span key="short" className="rounded-full bg-poke-blue/10 px-2 py-0.5 text-[11px] font-semibold text-poke-blue">Short {mult(o.multiplierBps)}</span>
+              : <span key={o.level} className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${o.level === 'full' ? 'bg-poke-red/10 text-poke-red' : 'bg-poke-blue/10 text-poke-blue'}`}>{o.level === 'full' ? 'Full' : 'Half'} {mult(o.multiplierBps)}</span>
           )) : <Locked>Locked</Locked>}
         </div>
       </div>
@@ -210,6 +249,75 @@ function Outcomes({ machine, offer }: { machine: MachineView; offer: OfferView }
         <div><div className="text-muted">Worst case</div><div className="font-semibold text-loss">−{usd(offer.maxLossUsd)}</div></div>
       </div>
       <p className="px-5 py-3 text-xs text-muted">Chances and averages come from recent real Collector Crypt pulls on this machine, selling every card back. Past pulls don&apos;t guarantee the next one.</p>
+    </Card>
+  );
+}
+
+/** The lowest card value the machine pays, read back from the top payout: cap = S × (price − lowest). */
+const lowestCard = (machine: MachineView, offer: OfferView) => offer.multiplierBps > 0 ? machine.priceUsd - offer.capUsd * 10_000 / offer.multiplierBps : machine.priceUsd;
+
+/** Worked examples of one short, in dollars: what the next card is worth and what comes back. */
+function ShortExample({ machine, offer }: { machine: MachineView; offer: OfferView }) {
+  const p = machine.priceUsd, s = offer.multiplierBps / 10_000, low = lowestCard(machine, offer), some = Math.max(low, p * 0.8);
+  const back = (value: number) => p + Math.min((p - value) * s, offer.capUsd);
+  const rows = [
+    { card: usd(some), win: `${usd(p - some)} × ${s.toFixed(2)}`, back: back(some), tone: 'text-uncommon' },
+    { card: `${usd(low)} (cheapest)`, win: `${usd(p - low)} × ${s.toFixed(2)}`, back: back(low), tone: 'text-uncommon' },
+    { card: `about ${usd(p, 0)}`, win: '$0', back: p, tone: 'text-ink' },
+    { card: `${usd(p * 1.05)} or more`, win: 'you lose', back: 0, tone: 'text-loss' },
+  ];
+  return (
+    <Card className="!p-0 overflow-hidden">
+      <div className="px-5 py-4">
+        <p className="text-sm">For every <strong>$1</strong> the next card is under {usd(p, 0)}, you win <strong>{usd(s)}</strong>, and you get your {usd(p, 0)} back.</p>
+        <p className="mt-1 text-xs text-muted">The next pull is the next {usd(p, 0)} {machine.name} pack anyone opens on Collector Crypt after your payment confirms. Their pack isn&apos;t touched.</p>
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-mist text-left text-xs text-muted"><tr><th className="px-5 py-2 font-medium">Next card</th><th className="px-3 py-2 font-medium">You win</th><th className="px-5 py-2 text-right font-medium">You get back</th></tr></thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.card} className="border-t border-line">
+              <td className="px-5 py-2.5">{r.card}</td>
+              <td className="px-3 py-2.5 tabular-nums text-muted">{r.win}</td>
+              <td className={`px-5 py-2.5 text-right font-semibold tabular-nums ${r.tone}`}>{usd(r.back)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
+
+function ShortOutcomes({ machine, offer }: { machine: MachineView; offer: OfferView }) {
+  const p = machine.priceUsd, s = offer.multiplierBps / 10_000;
+  const rows = [
+    { tag: 'Win', color: 'bg-uncommon', when: `Next card under ${usd(p * 0.95)}`, chance: offer.pWin, get: `Your ${usd(p, 0)} back + (${usd(p, 0)} − value) × ${s.toFixed(2)}.` },
+    { tag: 'Push', color: 'bg-push', when: `${usd(p * 0.95)} – ${usd(p * 1.05)}`, chance: offer.pPush, get: `Your ${usd(p, 0)} back.` },
+    { tag: 'Loss', color: 'bg-loss', when: `Next card ${usd(p * 1.05)} or more`, chance: offer.pLoss, get: `You lose your ${usd(p, 0)}. It goes to the pool.` },
+  ];
+  return (
+    <Card className="!p-0 overflow-hidden">
+      <ul>
+        {rows.map(r => (
+          <li key={r.tag} className="flex gap-4 border-b border-line px-5 py-4 last:border-0">
+            <span className={`mt-1 h-3 w-3 shrink-0 rounded-full ${r.color}`} />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <span className="font-semibold">{r.tag} <span className="font-normal text-muted">· {r.when}</span></span>
+                <span className="text-sm tabular-nums text-muted">{chance(r.chance)} of pulls</span>
+              </div>
+              <div className="mt-0.5 text-sm">{r.get}</div>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="grid grid-cols-2 gap-4 bg-mist px-5 py-4 text-sm">
+        <div><div className="text-muted">Most you can win</div><div className="font-semibold">+{usd(offer.capUsd)}</div></div>
+        <div><div className="text-muted">Chance you win</div><div className="font-semibold">{chance(offer.pWin)}</div></div>
+        <div><div className="text-muted">Average result</div><div className="font-semibold">{pct(offer.playerReturn)} <span className="font-normal text-muted">per short</span></div></div>
+        <div><div className="text-muted">Worst case</div><div className="font-semibold text-loss">−{usd(offer.maxLossUsd)}</div></div>
+      </div>
+      <p className="px-5 py-3 text-xs text-muted">Chances come from recent real Collector Crypt pulls on this machine. A short wins often but small; when it loses, it loses the whole stake. Past pulls don&apos;t guarantee the next one.</p>
     </Card>
   );
 }

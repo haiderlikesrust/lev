@@ -1,31 +1,41 @@
-import { Check, PackageOpen, Scale, Sparkles, Wallet, type LucideIcon } from 'lucide-react';
-import type { OrderStatus } from '@/lib/shared/types';
+import { Check, Eye, PackageOpen, Scale, Sparkles, Wallet, type LucideIcon } from 'lucide-react';
+import type { OrderStatus, Side } from '@/lib/shared/types';
 
-const STEPS: { label: string; icon: LucideIcon; status: OrderStatus[] }[] = [
-  { label: 'Payment', icon: Wallet, status: ['awaiting_payment', 'paying'] },
-  { label: 'Opening', icon: PackageOpen, status: ['paid', 'buying'] },
-  { label: 'Settling', icon: Scale, status: ['settling'] },
-  { label: 'Done', icon: Sparkles, status: ['complete'] },
-];
+type Step = { label: string; icon: LucideIcon; status: OrderStatus[] };
+const STEPS: Record<Side, Step[]> = {
+  long: [
+    { label: 'Payment', icon: Wallet, status: ['awaiting_payment', 'paying'] },
+    { label: 'Opening', icon: PackageOpen, status: ['paid', 'buying'] },
+    { label: 'Settling', icon: Scale, status: ['settling'] },
+    { label: 'Done', icon: Sparkles, status: ['complete'] },
+  ],
+  // A short opens nothing: it waits for the next pull anyone makes on the machine.
+  short: [
+    { label: 'Payment', icon: Wallet, status: ['awaiting_payment', 'paying'] },
+    { label: 'Next pull', icon: Eye, status: ['paid', 'watching'] },
+    { label: 'Settling', icon: Scale, status: ['settling'] },
+    { label: 'Done', icon: Sparkles, status: ['complete'] },
+  ],
+};
 
-export const stepIndex = (status: OrderStatus) => Math.max(0, STEPS.findIndex(s => s.status.includes(status)));
+export const stepIndex = (status: OrderStatus, side: Side = 'long') => Math.max(0, STEPS[side].findIndex(s => s.status.includes(status)));
 
 /**
  * A pack's progress as a track that fills between steps: finished steps pop into a check, the current one
  * spins and glows, and a shimmer runs along the filled track while the server works.
  */
-export function ProgressSteps({ status }: { status: OrderStatus }) {
-  const done = status === 'complete', current = done ? STEPS.length - 1 : stepIndex(status);
-  const fill = current / (STEPS.length - 1) * 100;
+export function ProgressSteps({ status, side = 'long' }: { status: OrderStatus; side?: Side }) {
+  const steps = STEPS[side], done = status === 'complete', current = done ? steps.length - 1 : stepIndex(status, side);
+  const fill = current / (steps.length - 1) * 100;
   return (
-    <div className="relative" role="progressbar" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={current + 1} aria-valuetext={STEPS[current].label}>
+    <div className="relative" role="progressbar" aria-valuemin={1} aria-valuemax={steps.length} aria-valuenow={current + 1} aria-valuetext={steps[current].label}>
       <div className="absolute left-8 right-8 top-4 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-mist">
         <div className="relative h-full overflow-hidden rounded-full bg-gradient-to-r from-poke-red via-poke-red to-poke-yellow transition-[width] duration-700 ease-out" style={{ width: `${fill}%` }}>
           {!done && <span className="progress-shimmer absolute inset-0" />}
         </div>
       </div>
       <ol className="relative flex justify-between">
-        {STEPS.map((s, i) => {
+        {steps.map((s, i) => {
           const state = done || i < current ? 'done' : i === current ? 'active' : 'todo';
           const Icon = state === 'done' ? Check : s.icon;
           return (

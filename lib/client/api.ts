@@ -45,3 +45,11 @@ export const timeAgo = (at: number) => {
   const s = Math.max(1, Math.round((Date.now() - at) / 1000));
   return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86_400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86_400)}d ago`;
 };
+
+type Play = { side: 'long' | 'short'; priceUsd: number; machineName: string; level: 'half' | 'full'; multiplierBps: number; outcome: 'loss' | 'push' | 'win' | null; bonusUsd: number; floorUsd: number };
+/** "$25 Starter · Full risk 2.15x", or "$25 Starter · Short 2.00x". */
+export const playLabel = (p: Play) => `$${p.priceUsd} ${p.machineName} · ${p.side === 'short' ? 'Short' : p.level === 'full' ? 'Full risk' : 'Half risk'} ${mult(p.multiplierBps)}`;
+/** What a settled pack or short gave the player. */
+export const playResult = (p: Play) => p.side === 'short'
+  ? p.outcome === 'win' ? `${usd(p.priceUsd, 0)} + ${usd(p.bonusUsd)}` : p.outcome === 'push' ? `${usd(p.priceUsd, 0)} back` : '$0'
+  : p.outcome === 'win' ? `card + ${usd(p.bonusUsd)}` : p.outcome === 'push' ? 'card' : p.floorUsd ? `${usd(p.floorUsd)} floor` : '$0';

@@ -7,7 +7,7 @@ import { ExternalLink, Locked } from './ui';
 function useConfig() { return usePoll<ConfigView>('/api/config', 60_000).data; }
 
 /** One live rule value inline in a sentence, e.g. <Rule name="cap" />. */
-export function Rule({ name }: { name: 'cap' | 'edge' | 'minEdge' | 'cooldown' | 'pause' | 'target' | 'minCap' | 'window' | 'ruin' }) {
+export function Rule({ name }: { name: 'cap' | 'edge' | 'minEdge' | 'cooldown' | 'pause' | 'target' | 'minCap' | 'window' | 'ruin' | 'shortGuard' | 'shortWait' }) {
   const c = useConfig();
   if (!c) return <span className="inline-block h-4 w-10 animate-pulse rounded bg-mist align-middle" />;
   const r = c.rules;
@@ -21,6 +21,8 @@ export function Rule({ name }: { name: 'cap' | 'edge' | 'minEdge' | 'cooldown' |
     minCap: `${r.minCapMultiple}× the pack price`,
     window: `${r.calibrationWindowDays} days`,
     ruin: `${r.ruinProbability * 100}%`,
+    shortGuard: `${r.shortGuardSeconds} seconds`,
+    shortWait: `${r.shortWaitMinutes} minutes`,
   }[name];
   return <strong className="font-semibold">{text}</strong>;
 }
@@ -31,9 +33,9 @@ export function MachineFacts() {
   if (!c) return <div className="h-40 animate-pulse rounded-2xl bg-mist" />;
   return (
     <div className="overflow-x-auto rounded-2xl border border-line">
-      <table className="w-full min-w-[620px] text-sm">
+      <table className="w-full min-w-[700px] text-sm">
         <thead className="bg-mist text-left text-xs text-muted">
-          <tr><th className="px-4 py-2.5 font-medium">Machine</th><th className="px-3 py-2.5 font-medium">CC buyback</th><th className="px-3 py-2.5 font-medium">Pulls used</th><th className="px-3 py-2.5 font-medium">Normal open</th><th className="px-3 py-2.5 font-medium">Half / Full</th><th className="px-3 py-2.5 font-medium">Calibrated</th></tr>
+          <tr><th className="px-4 py-2.5 font-medium">Machine</th><th className="px-3 py-2.5 font-medium">CC buyback</th><th className="px-3 py-2.5 font-medium">Pulls used</th><th className="px-3 py-2.5 font-medium">Normal open</th><th className="px-3 py-2.5 font-medium">Half / Full</th><th className="px-3 py-2.5 font-medium">Short</th><th className="px-3 py-2.5 font-medium">Calibrated</th></tr>
         </thead>
         <tbody>
           {c.machines.map(m => {
@@ -45,6 +47,7 @@ export function MachineFacts() {
                 <td className="px-3 py-2.5 tabular-nums">{m.pulls.toLocaleString('en-US')}</td>
                 <td className="px-3 py-2.5 tabular-nums">{m.offers[0] ? pct(m.offers[0].normalReturn) : '—'}</td>
                 <td className="px-3 py-2.5 tabular-nums"><span className="inline-flex items-center gap-1.5">{level('half')} <span className="text-muted">/</span> {level('full')}</span></td>
+                <td className="px-3 py-2.5 tabular-nums">{!m.short ? '—' : m.short.available ? mult(m.short.multiplierBps) : <Locked title={m.short.reason ?? ''} />}</td>
                 <td className="px-3 py-2.5 text-muted">{m.calibratedAt ? timeAgo(m.calibratedAt) : '—'}</td>
               </tr>
             );

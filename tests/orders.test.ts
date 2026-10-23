@@ -135,3 +135,85 @@ describe('leverage packs (practice mode)', () => {
     await expect(ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'half', true)).rejects.toThrow(/safety line/);
   });
 });
+
+/** Creates and pays one short, then lets the next pull on the machine (worth `valueUsd`) settle it. */
+async function short(ctx: Awaited<ReturnType<typeof setup>>, valueUsd: number | null, code = 'pokemon_25') {
+  ctx.packs.autoFeed = false;
+  ctx.s.orders.shortTiming = { guardMs: 0, lagMs: 0, pollMs: 0 };
+  const { order } = await ctx.s.orders.create(ctx.wallet, code, 'full', true, undefined, 'short');
+  await ctx.s.orders.pay(ctx.wallet, order.id, 'practice');
+  await ctx.s.orders.step();
+  const watching = await ctx.s.orders.get(order.id);
+  expect(watching.status).toBe('watching');
+  // A pull stamped before the short was paid never counts.
+  ctx.packs.pushPull(code, 1_000, watching.watchFrom! - 1);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  if (valueUsd !== null) ctx.packs.pushPull(code, valueUsd);
+  for (let i = 0; i < 10; i++) { await ctx.s.orders.step(); if (['complete', 'refunded', 'review'].includes((await ctx.s.orders.get(order.id)).status)) break; }
+  return ctx.s.orders.get(order.id);
+}
+
+describe('shorts (practice mode)', () => {
+  it('wins when the next pull misses: stake back plus (price − value) × S from the pool', async () => {
+    const ctx = await setup(), before = await balance(ctx.solana, ctx.solana.poolAddress);
+    const order = await short(ctx, 15);
+    expect(order.status).toBe('complete');
+    expect(order.side).toBe('short');
+    expect(order.outcome).toBe('win');
+    const payout = Math.floor((25 - 15) * order.multiplierBps / 10_000 * M) / M;
+    expect(order.bonusUsd).toBeCloseTo(payout, 6);
+    expect(order.valueUsd).toBe(15);
+    expect(await balance(ctx.solana, ctx.wallet)).toBeCloseTo(25 + payout, 6);
+    expect(await balance(ctx.solana, ctx.solana.poolAddress)).toBeCloseTo(before - payout, 6);
+    expect(await balance(ctx.solana, ctx.solana.opsAddress)).toBe(0);
+    expect(order.links.stakeBack && order.links.payout).toBeTruthy();
+    expect(order.pull?.mint).toBeTruthy();
+    expect(await ctx.s.pool.reserved()).toBe(0);
+    const [settled] = (await ctx.s.db.query('SELECT side, outcome, bonus_micros::text FROM settlements WHERE order_id=$1', [order.id])).rows;
+    expect(settled).toMatchObject({ side: 'short', outcome: 'win' });
+  });
+
+  it('loses the stake to the pool when the next pull hits, and returns it on a push', async () => {
+    const ctx = await setup(), before = await balance(ctx.solana, ctx.solana.poolAddress);
+    const loss = await short(ctx, 60);
+    expect(loss.outcome).toBe('loss');
+    expect(loss.bonusUsd).toBe(0);
+    expect(loss.links.stakeToPool).toBeTruthy();
+    expect(await balance(ctx.solana, ctx.wallet)).toBe(0);
+    expect(await balance(ctx.solana, ctx.solana.poolAddress)).toBeCloseTo(before + 25, 6);
+    const push = await short(ctx, 25.5);
+    expect(push.outcome).toBe('push');
+    expect(await balance(ctx.solana, ctx.wallet)).toBe(25);
+    expect(await balance(ctx.solana, ctx.solana.poolAddress)).toBeCloseTo(before + 25, 6);
+  });
+
+  it('refunds the stake in full when no pull comes in time', async () => {
+    const ctx = await setup();
+    ctx.s.settings.current = { ...ctx.s.settings.current, shortWaitMinutes: 0 };
+    const order = await short(ctx, null);
+    expect(order.status).toBe('refunded');
+    expect(order.pull).toBeNull();
+    expect(await balance(ctx.solana, ctx.wallet)).toBe(25);
+    expect(await ctx.s.pool.reserved()).toBe(0);
+  });
+
+  it('caps what all the shorts riding one pull can win together', async () => {
+    const ctx = await setup();
+    ctx.packs.autoFeed = false;
+    const first = (await ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'full', true, undefined, 'short')).order;
+    // Room for one short's top payout under the cap, not two.
+    const free = await ctx.s.pool.free();
+    ctx.s.settings.current = { ...ctx.s.settings.current, capBps: Math.ceil(first.capUsd * M * 1.5 * 10_000 / free) };
+    await ctx.s.orders.pay(ctx.wallet, first.id, 'practice');
+    const other = Keypair.generate().publicKey.toBase58();
+    const second = (await ctx.s.orders.create(other, 'pokemon_25', 'full', true, undefined, 'short')).order;
+    await expect(ctx.s.orders.pay(other, second.id, 'practice')).rejects.toThrow(/Too many shorts/);
+  });
+
+  it('counts short losses toward the cool-down', async () => {
+    const ctx = await setup();
+    for (let i = 0; i < 3; i++) expect((await play(ctx, 'full', 15)).outcome).toBe('loss');
+    for (let i = 0; i < 2; i++) expect((await short(ctx, 80)).outcome).toBe('loss');
+    await expect(ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'full', true, undefined, 'short')).rejects.toThrow(/5 losses in a row/);
+  });
+});

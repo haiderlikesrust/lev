@@ -1,12 +1,11 @@
 'use client';
 import { useState, type ReactNode } from 'react';
 import { ChevronDown, Coins, Gift, Layers, Trophy, Undo2 } from 'lucide-react';
-import { usePoll, mult, pct, timeAgo, usd } from '@/lib/client/api';
+import { usePoll, pct, playLabel, timeAgo, usd } from '@/lib/client/api';
 import { Card, OutcomeBadge, SectionHead } from '@/components/ui';
 import { CardPhoto, MachineArt } from '@/components/machine-art';
 import { Proof } from '@/components/proof';
 import { OutcomeBar } from '@/components/home/stats-band';
-import { LEVEL_NAME } from '@/lib/shared/leverage';
 import type { ConfigView, LeaderboardView as Board, Period, SettlementView } from '@/lib/shared/types';
 
 const PERIODS: { id: Period; label: string }[] = [{ id: '24h', label: '24 hours' }, { id: '7d', label: '7 days' }, { id: 'all', label: 'All time' }];
@@ -26,7 +25,7 @@ export function LeaderboardView() {
           <div>
             <div className="flex items-center gap-2 font-pixel text-[11px] uppercase tracking-wider text-poke-yellow"><Trophy size={14} /> Leaderboard</div>
             <h1 className="mt-2 text-4xl font-extrabold sm:text-5xl">Biggest pulls &amp; bonuses</h1>
-            <p className="mt-2 max-w-xl text-white/70">Every entry is a settled leverage pack, with each transaction behind it so anyone can check it.</p>
+            <p className="mt-2 max-w-xl text-white/70">Every entry is a settled leverage pack or short, with each transaction behind it so anyone can check it.</p>
           </div>
           <div className="flex rounded-full bg-white/10 p-1 ring-1 ring-white/15" role="tablist" aria-label="Period">
             {PERIODS.map(p => (
@@ -38,40 +37,42 @@ export function LeaderboardView() {
       </section>
 
       <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <Tile icon={<Layers size={18} />} tone="bg-poke-blue/10 text-poke-blue" label="Packs settled" value={t ? t.packs.toLocaleString('en-US') : '—'}>
+        <Tile icon={<Layers size={18} />} tone="bg-poke-blue/10 text-poke-blue" label="Plays settled" value={t ? (t.packs + t.shorts).toLocaleString('en-US') : '—'}>
           <OutcomeBar wins={t?.wins ?? 0} pushes={t?.pushes ?? 0} losses={t?.losses ?? 0} />
+          <div className="mt-1.5 text-xs text-muted">{t ? `${t.packs.toLocaleString('en-US')} packs · ${t.shorts.toLocaleString('en-US')} shorts` : ''}</div>
         </Tile>
-        <Tile icon={<Gift size={18} />} tone="bg-poke-red/10 text-poke-red" label="Bonuses paid" value={t ? usd(t.bonusesUsd, 0) : '—'}>
-          <div className="text-xs text-muted">biggest single bonus {t ? usd(t.biggestBonusUsd) : '—'}</div>
+        <Tile icon={<Gift size={18} />} tone="bg-poke-red/10 text-poke-red" label="Bonuses & short wins" value={t ? usd(t.bonusesUsd + t.shortPayoutsUsd, 0) : '—'}>
+          <div className="text-xs text-muted">biggest single win {t ? usd(t.biggestBonusUsd) : '—'}</div>
         </Tile>
         <Tile icon={<Undo2 size={18} />} tone="bg-uncommon/12 text-uncommon" label="Back to players" value={t ? usd(t.returnedUsd, 0) : '—'}>
-          <div className="text-xs text-muted">cards, bonuses and floors, from {t ? usd(t.volumeUsd, 0) : '—'} of packs</div>
+          <div className="text-xs text-muted">cards, bonuses, floors and short wins, from {t ? usd(t.volumeUsd, 0) : '—'} played</div>
         </Tile>
         <Tile icon={<Coins size={18} />} tone="bg-poke-yellow/25 text-poke-yellow-dark" label="Biggest pull" value={t ? usd(t.biggestPullUsd, 0) : '—'}>
-          <div className="text-xs text-muted">insured value of the best card</div>
+          <div className="text-xs text-muted">insured value of the best card a pack opened</div>
         </Tile>
       </section>
 
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Ranked title="Biggest bonuses" kicker="Wins" rows={data?.topBonuses} amount={s => `+${usd(s.bonusUsd)}`} sub={s => `card worth ${usd(s.valueUsd)}`} practice={practice} cluster={cluster} />
+        <Ranked title="Biggest wins" kicker="Bonuses & shorts" rows={data?.topBonuses} amount={s => `+${usd(s.bonusUsd)}`} sub={s => s.side === 'short' ? `short · next card ${usd(s.valueUsd)}` : `card worth ${usd(s.valueUsd)}`} practice={practice} cluster={cluster} />
         <Ranked title="Biggest pulls" kicker="Cards" rows={data?.topPulls} amount={s => usd(s.valueUsd)} sub={s => s.outcome === 'win' ? `+${usd(s.bonusUsd)} bonus` : s.outcome === 'push' ? 'push' : 'loss'} practice={practice} cluster={cluster} />
       </section>
 
       <section>
-        <SectionHead kicker="Machines" title="How each machine is playing" lede="Real results against the pool's target edge. Short runs swing a lot; the target is what holds over many packs." />
+        <SectionHead kicker="Machines" title="How each machine is playing" lede="Real results against the pool's target edge. A few plays swing a lot; the target is what holds over many." />
         <Card className="!p-0 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
+            <table className="w-full min-w-[780px] text-sm">
               <thead className="bg-mist text-left text-xs text-muted">
-                <tr><th className="px-5 py-3 font-medium">Machine</th><th className="px-3 py-3 font-medium">Packs</th><th className="px-3 py-3 font-medium">Win · push · loss</th><th className="px-3 py-3 font-medium">Bonuses paid</th><th className="px-3 py-3 font-medium">Sold back</th><th className="px-3 py-3 font-medium">Pool result</th></tr>
+                <tr><th className="px-5 py-3 font-medium">Machine</th><th className="px-3 py-3 font-medium">Packs</th><th className="px-3 py-3 font-medium">Shorts</th><th className="px-3 py-3 font-medium">Win · push · loss</th><th className="px-3 py-3 font-medium">Bonuses &amp; short wins</th><th className="px-3 py-3 font-medium">Sold back</th><th className="px-3 py-3 font-medium">Pool result</th></tr>
               </thead>
               <tbody>
                 {(data?.machines ?? []).map(m => (
                   <tr key={m.code} className="border-t border-line">
                     <td className="px-5 py-3"><div className="flex items-center gap-3"><MachineArt image={m.image} name={m.name} className="h-10 w-9" /><span><span className="font-semibold">${m.code.split('_')[1]}</span> <span className="text-muted">{m.name}</span></span></div></td>
                     <td className="px-3 py-3 tabular-nums">{m.packs}</td>
-                    <td className="w-48 px-3 py-3">{m.packs ? <OutcomeBar wins={m.wins} pushes={m.pushes} losses={m.losses} /> : <span className="text-muted">—</span>}</td>
-                    <td className="px-3 py-3 tabular-nums">{usd(m.bonusesUsd, 0)}</td>
+                    <td className="px-3 py-3 tabular-nums">{m.shorts}</td>
+                    <td className="w-48 px-3 py-3">{m.packs + m.shorts ? <OutcomeBar wins={m.wins} pushes={m.pushes} losses={m.losses} /> : <span className="text-muted">—</span>}</td>
+                    <td className="px-3 py-3 tabular-nums">{usd(m.bonusesUsd + m.shortPayoutsUsd, 0)}</td>
                     <td className="px-3 py-3 tabular-nums">{usd(m.sellbackUsd, 0)}</td>
                     <td className="px-3 py-3 tabular-nums">{m.realizedEdge === null ? <span className="text-muted">—</span> : <span className={m.realizedEdge >= 0 ? 'text-uncommon' : 'text-loss'}>{pct(m.realizedEdge)}</span>}</td>
                   </tr>
@@ -80,7 +81,7 @@ export function LeaderboardView() {
             </table>
           </div>
         </Card>
-        <p className="mt-3 text-xs text-muted">Pool result = (sellbacks − floors − bonuses) ÷ pack volume. Positive means the pool came out ahead on that machine in this period.</p>
+        <p className="mt-3 text-xs text-muted">Pool result = (sellbacks − floors − bonuses + short stakes kept − short payouts) ÷ volume played. Positive means the pool came out ahead on that machine in this period. Win · push · loss is from the player&apos;s side for packs and shorts alike.</p>
       </section>
     </div>
   );
@@ -115,7 +116,7 @@ function Ranked({ title, kicker, rows, amount, sub, practice, cluster }: {
                     <CardPhoto image={s.card?.image} name={s.card?.name} className="h-14 w-10 shrink-0 bg-mist" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold">{s.card?.name ?? 'Card'}</div>
-                      <div className="truncate text-xs text-muted">${s.priceUsd} {s.machineName} · {LEVEL_NAME[s.level]} {mult(s.multiplierBps)} · {s.wallet} · {timeAgo(s.settledAt)}</div>
+                      <div className="truncate text-xs text-muted">{playLabel(s)} · {s.wallet} · {timeAgo(s.settledAt)}</div>
                     </div>
                     <div className="shrink-0 text-right">
                       <div className="font-display text-lg font-extrabold tabular-nums">{amount(s)}</div>

@@ -2,8 +2,9 @@ import {
   CAP_GRID, LEVELS, LEVEL_FLOOR_BPS, ONE_X_BPS, bootstrap, decompose, fairAtCap, lcb95Normal, moments, playerReturn, poolEv, poolSd,
   roundDownMultiplierBps, ruinBankrollMicros, safeMultiplierBps, solveK, type Level,
 } from './leverage';
+import type { Side } from './short';
 
-export type { Level };
+export type { Level, Side };
 
 /** One machine × level, as computed by the daily calibration and stored in the `calibration` table. */
 export type CalibrationRow = {
@@ -57,7 +58,7 @@ export type OfferContext = {
 };
 
 export type Offer = {
-  level: Level; available: boolean; reason: string | null;
+  side: Side; level: Level; available: boolean; reason: string | null;
   multiplierBps: number; floorBps: number; capMicros: number; edgeBps: number;
   /** Per pack, as a fraction of the price, valued at CC's sellback price. */
   poolEdge: number; playerReturn: number; normalReturn: number;
@@ -92,7 +93,7 @@ export function offer(row: CalibrationRow, ctx: OfferContext): Offer {
   const bankroll = ruinBankrollMicros(sd, edge, ctx.priceMicros, s.ruinProbability);
   const unlockAtMicros = Math.max(bankroll, Math.ceil(s.minCapMultiple * ctx.priceMicros * 10_000 / s.capBps));
   const base: Offer = {
-    level: row.level, available: false, reason: null, multiplierBps, floorBps: Math.round(row.floor * 10_000), capMicros, edgeBps,
+    side: 'long', level: row.level, available: false, reason: null, multiplierBps, floorBps: Math.round(row.floor * 10_000), capMicros, edgeBps,
     poolEdge: edge, playerReturn: playerReturn(row.normalReturn, edge), normalReturn: row.normalReturn,
     pLoss: row.pLoss, pPush: row.pPush, pWin: row.pWin,
     maxLossMicros: ctx.priceMicros - Math.floor(row.floor * row.buyback * ctx.minValueMicros),

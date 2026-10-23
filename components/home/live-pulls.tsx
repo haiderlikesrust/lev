@@ -3,23 +3,23 @@ import Link from 'next/link';
 import { Radio } from 'lucide-react';
 import { useHomeData } from './home-data';
 import { CardPhoto } from '../machine-art';
-import { mult, timeAgo, usd } from '@/lib/client/api';
+import { playLabel, timeAgo, usd } from '@/lib/client/api';
 import type { SettlementView } from '@/lib/shared/types';
 
 const RESULT: Record<SettlementView['outcome'], (s: SettlementView) => { text: string; tone: string }> = {
-  win: s => ({ text: `+${usd(s.bonusUsd)} bonus`, tone: 'text-win' }),
-  push: () => ({ text: 'got the card', tone: 'text-muted' }),
-  loss: s => ({ text: s.floorUsd > 0 ? `${usd(s.floorUsd)} floor` : 'sold back', tone: 'text-loss' }),
+  win: s => ({ text: `+${usd(s.bonusUsd)} ${s.side === 'short' ? 'short win' : 'bonus'}`, tone: 'text-win' }),
+  push: s => ({ text: s.side === 'short' ? 'stake back' : 'got the card', tone: 'text-muted' }),
+  loss: s => ({ text: s.side === 'short' ? 'stake lost' : s.floorUsd > 0 ? `${usd(s.floorUsd)} floor` : 'sold back', tone: 'text-loss' }),
 };
 
-/** A slow marquee of the latest leverage packs settled on our platform, every outcome, with the card's photo. */
+/** A slow marquee of the latest packs and shorts settled on our platform, every outcome, with the card's photo. */
 export function LivePulls() {
   const { latest } = useHomeData();
   const head = (
     <div className="flex items-center gap-2 border-b border-line px-5 py-3 text-sm">
       <Radio size={16} className="glow text-poke-red" />
       <span className="font-semibold">Live pulls</span>
-      <span className="text-muted">· leverage packs settled here, wins and losses alike</span>
+      <span className="text-muted">· packs and shorts settled here, wins and losses alike</span>
       <Link href="/leaderboard" className="ml-auto hidden text-xs font-semibold text-poke-blue hover:underline sm:inline">Leaderboard</Link>
     </div>
   );
@@ -46,7 +46,7 @@ export function LivePulls() {
                 <CardPhoto image={s.card?.image} name={s.card?.name} className="h-16 w-12 shrink-0 bg-white" />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold">{s.card?.name ?? 'Card'}</div>
-                  <div className="truncate text-xs text-muted">${s.priceUsd} {s.machineName} · {s.level === 'full' ? 'Full' : 'Half'} {mult(s.multiplierBps)}</div>
+                  <div className="truncate text-xs text-muted">{playLabel(s)}</div>
                   <div className="mt-0.5 flex items-center gap-2 text-xs"><span className={`font-semibold ${r.tone}`}>{r.text}</span><span className="text-muted">{timeAgo(s.settledAt)}</span></div>
                 </div>
               </li>

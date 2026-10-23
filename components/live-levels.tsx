@@ -21,13 +21,14 @@ export function LiveLevels() {
         <div className="w-full sm:w-72"><HpBar bps={data.pool.healthBps} paused={!!data.pool.pauseReason} /></div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] text-sm">
+        <table className="w-full min-w-[760px] text-sm">
           <thead>
             <tr className="text-left text-xs text-muted">
               <th className="px-5 py-3 font-medium sm:px-6">Machine</th>
               <th className="px-3 py-3 font-medium">Normal open</th>
               <th className="px-3 py-3 font-medium">{LEVEL_NAME.half}</th>
               <th className="px-3 py-3 font-medium">{LEVEL_NAME.full}</th>
+              <th className="px-3 py-3 font-medium">Short</th>
             </tr>
           </thead>
           <tbody>
@@ -46,6 +47,11 @@ export function LiveLevels() {
                     </td>
                   );
                 })}
+                <td className="px-3 py-3">
+                  {!m.short ? <span className="text-muted">—</span> : m.short.available
+                    ? <Link href={`/open?machine=${m.code}&side=short`} className="font-semibold tabular-nums text-ink hover:text-poke-blue">{mult(m.short.multiplierBps)} <span className="font-normal text-muted">· wins {Math.round(m.short.pWin * 100)}%</span></Link>
+                    : <Locked title={m.short.reason ?? ''}>{m.short.reason?.startsWith('Unlocks') ? `at ${usdShort(m.short.unlockAtUsd)} pool` : 'collecting data'}</Locked>}
+                </td>
               </tr>
             ))}
           </tbody>

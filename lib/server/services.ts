@@ -14,7 +14,7 @@ import { LevPool } from './pool';
 import { Limits } from './limits';
 import { Collector } from './collector';
 import { Orders } from './orders';
-import { loadCalibration, runCalibration } from './calibration';
+import { loadCalibration, loadShortCalibration, runCalibration } from './calibration';
 import { redact } from './redact';
 import type { PackProvider, Solana } from './ports';
 
@@ -48,6 +48,8 @@ export async function createServices(options: { database?: Database; practice?: 
   }
   const pool = new LevPool(db, solana, settings), limits = new Limits(db, settings), collector = new Collector(db, packs);
   const orders = new Orders(db, jobs, solana, packs, pool, limits, settings, collector);
+  // Practice pulls arrive every few seconds and nobody can see them early, so practice shorts settle fast.
+  if (!config.live) orders.shortTiming = { guardMs: 2_000, lagMs: 1_500, pollMs: 1_500 };
   return { db, jobs, solana, packs, settings, pool, limits, collector, orders, burns: new Burns(db, solana, settings, pool), serial: new Serial(), practice };
 }
 
@@ -57,7 +59,7 @@ export async function bootstrap(s: Services) {
   if (!config.live && !config.practiceLiveData) await s.collector.seedFromSample();
   else await s.collector.poll().catch(() => 0);
   const rows = await loadCalibration(s.db);
-  if (!rows.length || Date.now() - Math.min(...rows.map(r => r.computedAt)) > 24 * 3_600_000) await runCalibration(s.db, s.collector, s.settings.current);
+  if (!rows.length || !(await loadShortCalibration(s.db)).length || Date.now() - Math.min(...rows.map(r => r.computedAt)) > 24 * 3_600_000) await runCalibration(s.db, s.collector, s.settings.current);
 }
 
 /**

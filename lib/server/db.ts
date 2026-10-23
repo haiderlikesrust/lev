@@ -109,6 +109,11 @@ export async function migrate(db: Database) {
     // The part of each creator-fee transfer that is pool money (the rest is held for the owner's buyback).
     `ALTER TABLE fee_splits ADD COLUMN IF NOT EXISTS pool_micros BIGINT`,
     // Owner-started buybacks of our coin from the held share, advanced by the worker until burned.
+    // Shorts share the order pipeline: no pack is bought; the order rides the next CC pull on its machine.
+    `ALTER TABLE orders ADD COLUMN IF NOT EXISTS side TEXT NOT NULL DEFAULT 'long'`,
+    `ALTER TABLE settlements ADD COLUMN IF NOT EXISTS side TEXT NOT NULL DEFAULT 'long'`,
+    // The CC pull a short rode (its card, CC's timestamp), as public proof.
+    `ALTER TABLE settlements ADD COLUMN IF NOT EXISTS pull JSONB`,
     `CREATE TABLE IF NOT EXISTS burns (id TEXT PRIMARY KEY, status TEXT NOT NULL, usdc_micros BIGINT NOT NULL, tokens TEXT, swap_signature TEXT, burn_signature TEXT, started_by TEXT NOT NULL, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL, error TEXT)`,
   ];
   for (const statement of statements) await db.query(statement);

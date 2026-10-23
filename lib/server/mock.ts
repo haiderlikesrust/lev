@@ -172,14 +172,32 @@ export class MockPacks implements PackProvider {
 
   async status(memo: string) { return this.records.get(memo) ?? { pack: null, send: null }; }
 
-  /** A few fresh pulls per poll, drawn from the sample, so the practice feed and calibration stay live. */
+  /**
+   * Practice feed: other players' pulls, one every few seconds per machine, drawn from the sample. It keeps the
+   * practice calibration live, and it is what practice shorts ride. Tests turn `autoFeed` off and push exact pulls.
+   */
+  autoFeed = true;
+  feedGapMs = 5_000;
+  private feed = new Map<string, FeedPull[]>();
+  pushPull(code: string, valueUsd: number, at = Date.now(), card: { tier?: number | null; image?: string | null; name?: string | null } = {}) {
+    // Ids look like CC's (`<card mint>:<time>`), so the card's address can be read back from them.
+    const pull: FeedPull = { id: `${fakeAddress()}:${at}`, code, valueMicros: Math.round(valueUsd * 1_000_000), tier: card.tier ?? null, slug: 'practice', pulledAt: at, image: card.image ?? null, name: card.name ?? null };
+    this.feed.set(code, [...(this.feed.get(code) ?? []), pull].sort((a, b) => a.pulledAt - b.pulledAt).slice(-200));
+    return pull;
+  }
   async recentPulls(code: string): Promise<FeedPull[]> {
     if (this.liveData) return this.liveData.recentPulls(code);
-    const pulls = loadSample().machines[code]?.pulls ?? [], now = Date.now();
-    return Array.from({ length: 3 }, (_, i) => {
-      const [value, tier, image, name] = pulls[Math.floor(Math.random() * pulls.length)] ?? [0, 0];
-      return { id: `practice:${randomUUID()}`, code, valueMicros: Math.round(value * 1_000_000), tier, slug: 'practice', pulledAt: now - i * 1000, image: image ?? null, name: name ?? null };
-    });
+    if (this.autoFeed) {
+      const pulls = loadSample().machines[code]?.pulls ?? [], now = Date.now();
+      // Catch up at most a few pulls, so a rarely polled machine doesn't flood the practice database.
+      let at = Math.max(this.feed.get(code)?.at(-1)?.pulledAt ?? 0, now - 3 * this.feedGapMs);
+      while ((at += Math.round(this.feedGapMs * (0.5 + Math.random()))) <= now) {
+        const [value, tier, image, name] = pulls[Math.floor(Math.random() * pulls.length)] ?? [0, 0];
+        this.pushPull(code, value, at, { tier, image, name });
+      }
+    }
+    // Newest first, like CC.
+    return [...(this.feed.get(code) ?? [])].reverse();
   }
   async pullHistory(slug: string, cursor: string | null) { return this.liveData ? this.liveData.pullHistory(slug, cursor) : { pulls: [], nextCursor: null, hasMore: false }; }
   vrfUrl() { return null; }

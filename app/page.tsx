@@ -61,8 +61,11 @@ export default function Home() {
             <div className="grid grid-cols-1 gap-3">
               <Level icon={<Shield size={20} />} tone="blue" name="Half risk" range="about 1.4–1.9x" text="Lose, and you still get half of what Collector Crypt pays to buy the card back." />
               <Level icon={<Flame size={20} />} tone="red" name="Full risk" range="about 2.1–2.9x" text="Lose, and you get nothing. The multiplier is higher." />
+              <Link href="/open?side=short" className="block transition hover:-translate-y-0.5">
+                <Level icon={<TrendingDown size={20} />} tone="navy" name="Short" range="about 0.5–2x per $1 under" text="Bet the next card anyone pulls is under the pack price. Wins often but small; a good card takes your stake." />
+              </Link>
               <div className="rounded-3xl border border-dashed border-line p-5 text-sm text-muted">
-                Both levels leave the pool the same small edge (about 3–5%), so your average result is a normal open&apos;s minus that edge. <Link href="/docs#multipliers" className="font-semibold text-poke-blue hover:underline">See the math</Link>
+                Every level leaves the pool the same small edge (about 3–5%): your average is a normal open&apos;s minus that edge, or just minus the edge on a short. <Link href="/docs#multipliers" className="font-semibold text-poke-blue hover:underline">See the math</Link>
               </div>
             </div>
           </div>
@@ -112,7 +115,7 @@ export default function Home() {
   );
 }
 
-function Level({ icon, tone, name, range, text }: { icon: ReactNode; tone: 'blue' | 'red'; name: string; range: string; text: string }) {
+function Level({ icon, tone, name, range, text }: { icon: ReactNode; tone: 'blue' | 'red' | 'navy'; name: string; range: string; text: string }) {
   return (
     <div className="flex gap-4 rounded-3xl border border-line bg-white p-5 shadow-card">
       <IconBadge tone={tone}>{icon}</IconBadge>
