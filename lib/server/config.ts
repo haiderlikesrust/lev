@@ -9,6 +9,8 @@ const schema = z.object({
   /** Postgres for production. Without it, embedded Postgres (PGlite) in PGLITE_DIR. */
   DATABASE_URL: z.string().default(''),
   PGLITE_DIR: z.string().default('.data/pglite'),
+  /** Set by the Docker image: refuse embedded Postgres there, since its data would not survive an update. */
+  DATABASE_REQUIRED: flag,
   /** The wallet that can open /admin. In practice mode with this unset, any signed-in wallet can. */
   OWNER_WALLET: z.string().default(''),
   /** LEV_OPS: receives pack payments, buys and opens packs on CC, holds cards for seconds, sells losers back. */

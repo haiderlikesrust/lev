@@ -2,7 +2,7 @@ import { NextResponse, connection, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { config } from './config';
 import { publicError, httpError, redact } from './redact';
-import { services, type Services } from './services';
+import { withServices, type Services } from './services';
 import { SESSION_COOKIE, sessionWallet } from './auth';
 
 /**
@@ -12,7 +12,7 @@ import { SESSION_COOKIE, sessionWallet } from './auth';
 export async function api<T>(fn: (s: Services) => Promise<T | Response>): Promise<Response> {
   await connection();
   try {
-    const result = await fn(await services());
+    const result = await withServices(fn);
     return result instanceof Response ? result : NextResponse.json(result, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     const e = error as Error & { statusCode?: number };

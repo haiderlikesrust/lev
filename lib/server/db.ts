@@ -42,15 +42,25 @@ function gated(raw: Database): Database {
   };
 }
 
-export async function openDatabase(url = config.DATABASE_URL, directory = config.PGLITE_DIR): Promise<Database> {
+/**
+ * `onStandby` makes a busy lock a wait instead of an error: during an update the new server is called
+ * once, then waits until the old one stops and Postgres releases its lock. Scripts leave it out.
+ */
+export async function openDatabase(url = config.DATABASE_URL, directory = config.PGLITE_DIR, onStandby?: () => void): Promise<Database> {
+  if (!url && config.DATABASE_REQUIRED === 'true') throw new Error('Set DATABASE_URL. This container keeps its data in Postgres; embedded Postgres would be wiped by every update.');
   if (url) {
     const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 8000, query_timeout: 15000 });
     let connected = false;
     client.on('error', () => { connected = false; });
     await client.connect();
     // One durable coordinator owns every financial transition.
-    const lock = await client.query('SELECT pg_try_advisory_lock(713531924) AS acquired');
-    if (!lock.rows[0].acquired) { await client.end(); throw new Error('Another coordinator is already running.'); }
+    try {
+      for (let waiting = false; !(await client.query('SELECT pg_try_advisory_lock(713531924) AS acquired')).rows[0].acquired;) {
+        if (!onStandby) throw new Error('Another coordinator is already running.');
+        if (!waiting) { waiting = true; onStandby(); }
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+    } catch (error) { await client.end().catch(() => {}); throw error; }
     connected = true;
     // A pool can silently reconnect without owning the advisory lock. Stop instead; restart reconciles.
     return gated({
@@ -129,6 +139,8 @@ export class Serial {
     this.tail = next.catch(() => {});
     return next;
   }
+  /** Resolves once everything queued so far has finished. */
+  idle() { return this.tail; }
 }
 
 export async function atomic<T>(db: Database, fn: () => Promise<T>) {

@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
+import { connection } from 'next/server';
 import { ArrowDown, ArrowRight, Ban, Coins, Eye, Flame, HandCoins, PackageOpen, Receipt, Scale, Shield, ShieldCheck, Timer, Trophy, TrendingDown, Wallet } from 'lucide-react';
 import { HomeDataProvider } from '@/components/home/home-data';
 import { Hero } from '@/components/home/hero';
@@ -9,6 +10,7 @@ import { LivePulls } from '@/components/home/live-pulls';
 import { PayoutCalculator } from '@/components/home/payout-calculator';
 import { IconBadge, SectionHead } from '@/components/ui';
 import { PokeBall } from '@/components/pokeball';
+import { CoinAddress } from '@/components/coin-address';
 import { APP_NAME } from '@/lib/shared/brand';
 import { config } from '@/lib/server/config';
 import { coinView } from '@/lib/server/coin';
@@ -25,7 +27,7 @@ export default function Home() {
     <HomeDataProvider>
       <div className="space-y-16 sm:space-y-20">
         <div className="space-y-4">
-          <Hero coin={coinView()} practice={!config.live} />
+          <Hero coinAddress={<Suspense><HeroCoinAddress /></Suspense>} />
           <StatsBand />
         </div>
 
@@ -115,6 +117,12 @@ export default function Home() {
       </div>
     </HomeDataProvider>
   );
+}
+
+/** Per request: the coin address and practice mode come from the server's environment, not the build's (see app/layout.tsx). */
+async function HeroCoinAddress() {
+  await connection();
+  return <CoinAddress coin={coinView()} practice={!config.live} variant="hero" />;
 }
 
 function Level({ icon, tone, name, range, text }: { icon: ReactNode; tone: 'blue' | 'red' | 'navy'; name: string; range: string; text: string }) {

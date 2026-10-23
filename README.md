@@ -131,7 +131,11 @@ git diff design-v1 -- app components
 | `lib/server/services.ts` | Wiring, plus the background worker |
 | `app/` | Pages (Home, Open, Pool, History, Admin) and `app/api/*` routes |
 
-The worker runs inside the server process, started by `instrumentation.ts`, the way Pullback's coordinator does. That way exactly one process owns the database and every money-moving step. Run one instance.
+The worker runs inside the server process, started by `instrumentation.ts`, the way Pullback's coordinator does. That way exactly one process owns the database and every money-moving step. Run one instance. During an update, the new server waits as a standby until the old one hands over the database.
+
+## Deploy
+
+Production runs on Dokploy as an Application (this repository's `Dockerfile`) plus a Postgres database. Updates have no downtime: the new version starts first and takes over from the old one. Follow [docs/DOKPLOY.md](docs/DOKPLOY.md); the environment template is [deploy/dokploy.env.example](deploy/dokploy.env.example).
 
 ## Before mainnet
 

@@ -33,6 +33,7 @@
     "pg": "^8.23.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "tsx": "^4.23.15",
     "tweetnacl": "^1.0.3",
     "zod": "^3.25.76"
   },
@@ -45,7 +46,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
     "tailwindcss": "^4",
-    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^3.2.7"
   }
