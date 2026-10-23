@@ -56,6 +56,20 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; }
   .wallet-adapter-button { padding: 0 12px !important; font-size: 13px !important; }
   .wallet-adapter-button-start-icon { margin-right: 6px !important; width: 20px !important; height: 20px !important; }
 }
+/* On the navy nav band the wallet button is Pokédex yellow. */
+.nav-band .wallet-adapter-button-trigger { background: var(--color-poke-yellow) !important; color: var(--color-ink) !important; }
+.nav-band .wallet-adapter-button-trigger:not([disabled]):hover { background: #ffd83d !important; }
+
+/* Binder tabs: the current page's tab curves out into the page at both feet, like a folder divider. */
+.binder-tab { position: relative; }
+.binder-tab[aria-current="page"]::before, .binder-tab[aria-current="page"]::after {
+  content: ""; position: absolute; bottom: 0; width: 14px; height: 14px; pointer-events: none;
+}
+.binder-tab[aria-current="page"]::before { left: -14px; background: radial-gradient(circle at 0 0, transparent 13.5px, var(--color-paper) 14px); }
+.binder-tab[aria-current="page"]::after { right: -14px; background: radial-gradient(circle at 100% 0, transparent 13.5px, var(--color-paper) 14px); }
+/* The narrow-screen page menu drops out of the band. */
+@keyframes menu-drop { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.menu-drop { animation: menu-drop 0.22s cubic-bezier(.2,.8,.2,1) both; }
 
 /* Motion. Every animation here stops under prefers-reduced-motion (bottom of file). */
 @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
@@ -102,5 +116,6 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; }
 @media (prefers-reduced-motion: reduce) {
   .float, .glow, .marquee, .machine-work, .rays, .step-bob, .step-halo, .progress-shimmer, .animate-spin { animation: none !important; }
   .step-pop { animation-duration: 0.01s !important; }
+  .menu-drop { animation: none !important; }
   .rise, .flash, .capsule-pop, .capsule-top, .capsule-bottom, .card-flip, .sparkle, .card-shine::after { animation-duration: 0.01s !important; animation-delay: 0s !important; }
 }
