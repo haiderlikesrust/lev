@@ -21,27 +21,38 @@ export function Proof({ s, practice, cluster }: { s: SettlementView; practice: b
     { label: 'Short paid', note: 'LEV_POOL paid (price − value) × the short multiple', sig: s.links.payout },
     { label: 'Stake to pool', note: 'The next card hit, so the stake went to LEV_POOL', sig: s.links.stakeToPool },
   ].filter(x => x.sig);
+  const cardMint = practice ? null : short ? s.pull?.mint : s.card?.mint;
   return (
-    <div className="rounded-2xl bg-mist p-4">
-      <div className="flex items-center gap-2 text-xs font-semibold"><ShieldCheck size={14} className="text-uncommon" /> Proof {practice && <span className="font-normal text-muted">· practice mode: simulated signatures</span>}</div>
+    <div className="rounded-2xl bg-mist px-4 py-4 sm:px-5">
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
+        <span className="flex items-center gap-1.5 font-semibold text-ink"><ShieldCheck size={14} className="text-uncommon" aria-hidden />Proof</span>
+        {practice && <span className="text-muted">· practice mode: simulated signatures</span>}
+      </div>
       {short && s.pull && (
-        <p className="mt-2 text-xs text-muted">
+        <p className="mt-2 text-xs leading-relaxed text-muted">
           Rode the first {s.machineName} pull Collector Crypt stamped after the payment: {s.card?.name ?? 'a card'} worth ${s.valueUsd.toFixed(2)}, pulled {new Date(s.pull.pulledAt).toLocaleString()}.
         </p>
       )}
-      <ol className="mt-3 space-y-2">
+      {/* A timeline: numbered steps joined by a line, each with its transaction on the right. */}
+      <ol className="mt-4">
         {steps.map((x, i) => (
-          <li key={x.label} className="flex items-start gap-3 text-xs">
-            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white font-pixel text-[9px] text-muted">{i + 1}</span>
-            <div className="min-w-0 flex-1"><div className="font-medium text-ink">{x.label}</div><div className="text-muted">{x.note}</div></div>
-            <TxLink label="tx" signature={x.sig} practice={practice} cluster={cluster} />
+          <li key={x.label} className="relative flex gap-3 pb-4 last:pb-0">
+            {i < steps.length - 1 && <span className="absolute bottom-1 left-[11.5px] top-7 w-px bg-line" aria-hidden />}
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-[11px] font-semibold tabular-nums text-muted ring-1 ring-line">{i + 1}</span>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <div className="text-sm font-medium leading-5 text-ink">{x.label}</div>
+              <div className="mt-0.5 text-xs text-muted">{x.note}</div>
+            </div>
+            <span className="shrink-0 pt-1"><TxLink label="tx" signature={x.sig} practice={practice} cluster={cluster} /></span>
           </li>
         ))}
       </ol>
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-3">
-        {s.vrfUrl && <ExternalLink href={s.vrfUrl}>Fairness proof (VRF)</ExternalLink>}
-        {!practice && (short ? s.pull?.mint : s.card?.mint) && <ExternalLink href={`https://collectorcrypt.com/assets/solana/${short ? s.pull!.mint : s.card!.mint}`}>{short ? 'The pulled card on Collector Crypt' : 'Card on Collector Crypt'}</ExternalLink>}
-      </div>
+      {(s.vrfUrl || cardMint) && (
+        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-3">
+          {s.vrfUrl && <ExternalLink href={s.vrfUrl}>Fairness proof (VRF)</ExternalLink>}
+          {cardMint && <ExternalLink href={`https://collectorcrypt.com/assets/solana/${cardMint}`}>{short ? 'The pulled card on Collector Crypt' : 'Card on Collector Crypt'}</ExternalLink>}
+        </div>
+      )}
     </div>
   );
 }

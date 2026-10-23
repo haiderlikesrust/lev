@@ -4,6 +4,8 @@ import './globals.css';
 import { Providers } from '@/components/providers';
 import { Nav } from '@/components/nav';
 import { Wordmark } from '@/components/logo';
+import { CoinAddress } from '@/components/coin-address';
+import { coinView } from '@/lib/server/coin';
 import { APP_NAME, APP_TAGLINE } from '@/lib/shared/brand';
 
 const inter = Inter({ variable: '--font-inter', subsets: ['latin'] });
@@ -29,7 +31,10 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
           <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-20 pt-6 sm:pt-10">{children}</main>
           <footer className="bg-navy text-white/70">
             <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 text-xs sm:flex-row sm:items-center sm:justify-between">
-              <Wordmark className="h-7" />
+              <div className="flex flex-col gap-2.5">
+                <Wordmark className="h-7" />
+                <CoinAddress coin={coinView()} practice={practice} variant="footer" />
+              </div>
               <span className="max-w-2xl sm:text-right">An independent add-on to Collector Crypt packs, funded by our coin&apos;s creator fees. Leverage packs are high risk: you can lose your entire pack price. 18+.</span>
             </div>
           </footer>

@@ -17,8 +17,10 @@ const schema = z.object({
   LEV_POOL_PRIVATE_KEY: z.string().default(''),
   /** The wallet that claims our coin's creator fees and sends their USDC here with memo `fee-split:<cycle>`; only its transfers count as fee income. */
   FEE_SOURCE_WALLET: z.string().default(''),
-  /** Our coin's mint (for the owner's manual buyback). */
+  /** Our coin's mint: shown on the site as its contract address (hidden until set), and used by /admin. */
   MEMECOIN_MINT: z.string().default(''),
+  /** Our coin's ticker without the "$" (env files would read "$LONG" as a variable), e.g. LONG. Optional. */
+  COIN_TICKER: z.string().default(''),
   /** From portal.jup.ag, for swaps. */
   JUPITER_API_KEY: z.string().default(''),
   SOLANA_RPC_URL: z.string().default(''),

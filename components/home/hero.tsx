@@ -4,9 +4,11 @@ import { ArrowRight, BookOpen } from 'lucide-react';
 import { useHomeData } from './home-data';
 import { MachineArt } from '../machine-art';
 import { HighRisk } from '../ui';
+import { CoinAddress } from '../coin-address';
+import type { CoinView } from '@/lib/shared/types';
 
-/** Dark hero with CC's real machines floating on the right. */
-export function Hero() {
+/** Dark hero with CC's real machines floating on the right, and our coin's contract address. */
+export function Hero({ coin, practice }: { coin: CoinView | null; practice: boolean }) {
   const { config } = useHomeData();
   const art = (code: string) => config?.machines.find(m => m.code === code);
   const center = art('pokemon_100'), left = art('pokemon_25'), right = art('pokemon_250');
@@ -30,6 +32,7 @@ export function Hero() {
               <BookOpen size={18} /> How it works
             </Link>
           </div>
+          <div className="mt-6"><CoinAddress coin={coin} practice={practice} variant="hero" /></div>
         </div>
 
         <div className="relative mx-auto h-64 w-full max-w-md sm:h-80">

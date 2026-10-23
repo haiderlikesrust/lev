@@ -89,6 +89,9 @@ export type PlayerLimitView = {
   cooldownUntil: number | null;
 };
 
+/** Our coin's public contract address and ticker. */
+export type CoinView = { mint: string; ticker: string | null };
+
 export type MeView = { wallet: null } | { wallet: string; owner: boolean; optedIn: boolean; limits: PlayerLimitView };
 
 export type ConfigView = {
