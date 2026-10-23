@@ -5,9 +5,8 @@ import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { BookOpen, Check, ChevronDown, Coins, History, House, Menu, PackageOpen, Settings2, Trophy, X, type LucideIcon } from 'lucide-react';
-import { PokeBall } from './pokeball';
+import { Wordmark } from './logo';
 import { useSession } from './providers';
-import { APP_NAME } from '@/lib/shared/brand';
 
 // The wallet button reads browser-only wallet state, so it renders on the client only.
 const WalletMultiButton = dynamic(() => import('@solana/wallet-adapter-react-ui').then(m => m.WalletMultiButton), { ssr: false, loading: () => <div className="h-10 w-28 rounded-full bg-white/10 sm:w-36" /> });
@@ -61,9 +60,8 @@ export function Nav() {
       )}
       <div className="nav-band dots relative bg-navy text-white">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-4 sm:gap-3 xl:h-16">
-          <Link href="/" onClick={close} className="group flex shrink-0 items-center gap-2 rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-poke-yellow sm:gap-2.5">
-            <PokeBall size={28} className="transition duration-500 group-hover:rotate-[200deg]" />
-            <span className="whitespace-nowrap font-display text-[15px] font-extrabold tracking-tight max-[369px]:hidden sm:text-[17px]">{APP_NAME}</span>
+          <Link href="/" onClick={close} className="shrink-0 rounded-lg transition hover:scale-[1.04] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-poke-yellow">
+            <Wordmark priority className="h-8 xl:h-9" />
           </Link>
 
           <nav className="ml-4 hidden self-stretch xl:flex" aria-label="Main">

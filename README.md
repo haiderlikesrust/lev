@@ -1,7 +1,7 @@
-# Crypt Leverage (placeholder name)
+# long.cards
 
 An optional, **high-risk** leverage add-on to Collector Crypt (CC) packs, next to Pullback (loss coverage).
-The name lives in one place: `lib/shared/brand.ts`.
+The name lives in one place: `lib/shared/brand.ts`. The logo master is `public/brand/long-logo.png`; the wordmark, favicon and link preview are cut from it (`public/brand/long-wordmark.png`, `app/icon.png`, `app/apple-icon.png`, `app/opengraph-image.png`).
 
 **What happens to a pack:**
 - **You pay:** you pay the pack price.
