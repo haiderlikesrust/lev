@@ -46,7 +46,7 @@ async function Site({ children }: { children: ReactNode }) {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-20 pt-6 sm:pt-10">{children}</main>
       <footer className="bg-navy text-white/70">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 text-xs sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col items-start gap-2.5">
             <Wordmark className="h-7" />
             <CoinAddress coin={coinView()} practice={practice} variant="footer" />
           </div>
