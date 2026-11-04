@@ -189,6 +189,7 @@ function startWorker(c: Coordinator, s: Services) {
     const rows = await loadCalibration(s.db);
     if (!rows.length || Date.now() - Math.min(...rows.map(r => r.computedAt)) > 24 * 3_600_000) await runCalibration(s.db, s.collector, s.settings.current);
   });
+  loop('cleanup', 3_600_000, async () => { for (const table of ['challenges', 'sessions']) await s.db.query(`DELETE FROM ${table} WHERE expires_at < $1`, [Date.now()]); });
   if (config.live) loop('creator-fees', 120_000, async () => { if (await s.burns.feesDue()) await s.serial.run(() => s.burns.collectFees()); });
   console.log(`[worker] started (${config.live ? 'mainnet' : 'practice mode'})`);
 }

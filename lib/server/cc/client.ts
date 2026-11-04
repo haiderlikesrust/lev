@@ -141,9 +141,16 @@ export function parseMachine(m: any, baseUrl = 'https://gacha.collectorcrypt.com
   };
 }
 
+/** CC's insured value in dollars, or null while it has none. A blank must never read as a $0 card: that would settle a real pull as a total loss. */
+export function insuredUsd(raw: unknown) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const value = Number(String(raw).replace(/[$,]/g, ''));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 export function parsePull(w: any): FeedPull | null {
-  const value = Number(w?.insuredValue), at = Date.parse(w?.created_at ?? '');
-  if (!w?.nft_address || typeof w.pack_type !== 'string' || !Number.isFinite(value) || value < 0 || !Number.isFinite(at)) return null;
+  const value = insuredUsd(w?.insuredValue), at = Date.parse(w?.created_at ?? '');
+  if (!w?.nft_address || typeof w.pack_type !== 'string' || value === null || !Number.isFinite(at)) return null;
   // The on-chain `name` is cut at 32 characters; `json_name` is the full one.
   const name = w.nft?.content?.metadata?.json_name ?? w.nft?.content?.metadata?.name;
   return {
@@ -156,10 +163,9 @@ export function parsePull(w: any): FeedPull | null {
 export function normalizeCard(opened: any, status: any): Card {
   const nft = opened.nftWon ?? {}, metadata = nft.content?.metadata ?? nft.metadata ?? {};
   const attributes = Array.isArray(metadata.attributes) ? metadata.attributes : [];
-  const rawValue = status.send?.insured_value ?? attributes.find((a: any) => /insured.?value/i.test(a.trait_type))?.value;
-  const value = rawValue == null || rawValue === '' ? NaN : Number(String(rawValue).replace(/[$,]/g, ''));
+  const value = insuredUsd(status.send?.insured_value ?? attributes.find((a: any) => /insured.?value/i.test(a.trait_type))?.value);
   const image = safeUrl(nft.content?.links?.image ?? nft.content?.files?.[0]?.uri ?? metadata.image ?? nft.image);
   return { mint: new PublicKey(opened.nft_address).toBase58(), name: metadata.json_name ?? metadata.name ?? nft.name ?? 'Pokémon card', image,
-    insuredValueUsd: Number.isFinite(value) && value >= 0 ? value : null, rarity: opened.rarity ?? null,
+    insuredValueUsd: value, rarity: opened.rarity ?? null,
     transferSignature: opened.transactionSignature ?? status.send?.transaction_signature ?? null };
 }

@@ -46,7 +46,8 @@ for (const [name, secret] of signers) {
   if (!rpc) { ok(`${name} ${signer.publicKey.toBase58()}`); continue; }
   const ata = getAssociatedTokenAddressSync(new PublicKey(config.USDC_MINT), signer.publicKey);
   const [sol, account] = await Promise.all([rpc.getBalance(signer.publicKey), rpc.getAccountInfo(ata)]);
-  (account && sol > 5_000_000 ? ok : warn)(`${name} ${signer.publicKey.toBase58()}: ${(sol / 1e9).toFixed(3)} SOL, USDC account ${account ? 'exists' : 'MISSING (create it before launch)'}`);
+  // LEV_POOL's swaps must leave 0.02 SOL in the wallet.
+  (account && sol > (name === 'LEV_POOL' ? 30_000_000 : 5_000_000) ? ok : warn)(`${name} ${signer.publicKey.toBase58()}: ${(sol / 1e9).toFixed(3)} SOL, USDC account ${account ? 'exists' : 'MISSING (create it before launch)'}`);
 }
 if (keys.length === 2 && keys[0] === keys[1]) warn('LEV_OPS and LEV_POOL must be different wallets.');
 

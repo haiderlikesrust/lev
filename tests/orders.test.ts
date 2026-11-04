@@ -3,6 +3,7 @@ import { Keypair } from '@solana/web3.js';
 import { openDatabase } from '@/lib/server/db';
 import { MockPacks, MockSolana } from '@/lib/server/mock';
 import { recordCreatorFees } from '@/lib/server/burns';
+import { insuredUsd, parsePull } from '@/lib/server/cc/client';
 import { bootstrap, createServices } from '@/lib/server/services';
 import type { Level } from '@/lib/shared/leverage';
 
@@ -143,6 +144,38 @@ describe('leverage packs (practice mode)', () => {
     expect(await ctx.s.burns.feesDue()).toBe(false);
     await ctx.s.burns.collectFees();
     expect(await ctx.s.pool.held()).toBe(0);
+  });
+
+  it('never reads a blank card value as $0', async () => {
+    expect([null, undefined, '', 0, 'n/a'].map(insuredUsd)).toEqual([null, null, null, null, null]);
+    expect([65, '65.5', '$1,200'].map(insuredUsd)).toEqual([65, 65.5, 1_200]);
+    expect(parsePull({ nft_address: 'a', pack_type: 'pokemon_25', insuredValue: null, created_at: '2026-11-04T00:00:00Z' })).toBeNull();
+    const ctx = await setup(), buy = ctx.packs.buy.bind(ctx.packs);
+    ctx.packs.buy = async (id, code, price) => { const r = await buy(id, code, price); return r.state === 'complete' ? { ...r, card: { ...r.card, insuredValueUsd: null } } : r; };
+    ctx.packs.status = async () => ({ send: { insured_value: null } });
+    const order = await play(ctx, 'full', 60);
+    expect(order.status).toBe('settling');
+    expect(order.valueUsd).toBeNull();
+  });
+
+  it('refunds a waiting short on time even while the feed is down', async () => {
+    const ctx = await setup();
+    // An hour's guard means no sample pull counts; the wait is set so it has already run out.
+    ctx.s.orders.shortTiming = { guardMs: 3_600_000, lagMs: 0, pollMs: 0 };
+    ctx.s.settings.current = { ...ctx.s.settings.current, shortWaitMinutes: -120 };
+    ctx.packs.recentPulls = async () => { throw new Error('Collector Crypt is down'); };
+    const { order } = await ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'full', true, undefined, 'short');
+    await ctx.s.orders.pay(ctx.wallet, order.id, 'practice');
+    for (let i = 0; i < 6; i++) await ctx.s.orders.step();
+    expect((await ctx.s.orders.get(order.id)).status).toBe('refunded');
+  });
+
+  it('counts paid packs against a player\'s own loss limit until they settle', async () => {
+    const ctx = await setup();
+    await ctx.s.limits.setOwnLimit(ctx.wallet, 30 * M);
+    const { order } = await ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'full', true);
+    await ctx.s.orders.pay(ctx.wallet, order.id, 'practice');
+    await expect(ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'full', true)).rejects.toThrow(/own daily loss limit/);
   });
 
   it('pauses new packs below the safety line', async () => {

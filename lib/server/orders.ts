@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { atomic, audit, record, type Database } from './db';
 import { Jobs, PendingOperation, ReviewRequired } from './jobs';
 import { httpError, redact } from './redact';
-import { ApiError, type Card } from './cc/client';
+import { ApiError, insuredUsd, type Card } from './cc/client';
 import type { BuiltPayment, PackProvider, Solana } from './ports';
 import type { LevPool } from './pool';
 import type { Limits } from './limits';
@@ -250,7 +250,9 @@ export class Orders {
         try {
           if (row.side === 'short' && !(await this.db.query('SELECT 1 FROM reservations WHERE id=$1 AND released_at IS NULL', [row.id])).rows.length) await this.checkShortExposure(row);
           await this.pool.reserve(row.id, Number(row.cap_micros));
-        } catch {
+        } catch (error) {
+          // Only the pool truly refusing refunds the player; an RPC hiccup retries.
+          if (!(error as { statusCode?: number }).statusCode) throw error;
           await record(this.db, { id: `order:${row.id}:payment`, bucket: 'ops', kind: 'payment', micros: price, signature: state.signature, ref: row.id });
           return this.save(row, 'refunding', { refundReason: row.side === 'short' ? 'The pool could no longer cover this short\'s top payout.' : 'The pool could no longer cover this pack\'s top bonus.' });
         }
@@ -305,8 +307,8 @@ export class Orders {
     let d = row.data;
     const price = Number(row.price_micros);
     if (d.valueMicros === undefined) {
-      const value = Number((await this.packs.status(d.memo!))?.send?.insured_value);
-      if (!Number.isFinite(value) || value < 0) {
+      const value = insuredUsd((await this.packs.status(d.memo!))?.send?.insured_value);
+      if (value === null) {
         const since = d.valueWaitSince ?? Date.now();
         if (!d.valueWaitSince) await this.save(row, row.status, { valueWaitSince: since });
         if (Date.now() - since > VALUE_WAIT_MS) throw new ReviewRequired('Collector Crypt has not recorded this card\'s insured value; settle it by hand inside the 72-hour sellback window.');
@@ -360,7 +362,8 @@ export class Orders {
     const d = row.data, now = Date.now();
     if (now - (this.polled.get(row.code) ?? 0) >= this.shortTiming.pollMs) {
       this.polled.set(row.code, now);
-      await this.collector.insert(await this.packs.recentPulls(row.code));
+      // A feed outage must not stop the wait below from refunding the stake.
+      await this.collector.insert(await this.packs.recentPulls(row.code).catch(() => []));
     }
     const next = (await this.db.query<{ id: string; value_micros: string; pulled_at: string; tier: number | null; image: string | null; name: string | null }>(
       'SELECT id, value_micros::text, pulled_at::text, tier, image, name FROM cc_pulls WHERE code=$1 AND pulled_at > $2 ORDER BY pulled_at, id LIMIT 1', [row.code, d.watchFrom])).rows[0];

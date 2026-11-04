@@ -30,15 +30,15 @@ export function POST(req: NextRequest) {
       z.object({ action: z.enum(['retry', 'refund', 'retryNow']), id: z.string().uuid() }),
     ]));
     if (input.action === 'buyback') {
-      await s.burns.start(who.wallet);
+      await s.serial.run(() => s.burns.start(who.wallet));
       // Practice settles at once; on mainnet the worker carries it through swap and burn.
       if (s.practice) await s.serial.run(() => s.burns.step());
     } else if (input.action === 'settings') {
       const before = s.settings.current, next = await s.settings.save(settingsSchema.parse(input.settings), who.wallet);
       if (before.edgeBps !== next.edgeBps || before.minEdgeBps !== next.minEdgeBps || before.calibrationWindowDays !== next.calibrationWindowDays) await runCalibration(s.db, s.collector, next);
     } else if (input.action === 'recalibrate') await runCalibration(s.db, s.collector, s.settings.current);
-    else if (input.action === 'retryNow') await s.orders.retryNow(input.id);
-    else await s.orders.resolve(input.id, input.action);
+    else if (input.action === 'retryNow') await s.serial.run(() => s.orders.retryNow(input.id));
+    else { const { id, action } = input; await s.serial.run(() => s.orders.resolve(id, action)); }
     return { ok: true, settings: s.settings.current, review: await s.orders.review(), buyback: await buyback(s) };
   });
 }

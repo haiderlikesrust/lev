@@ -84,7 +84,10 @@ export class Limits {
     if (until) throw httpError(429, `${s.cooldownLosses} losses in a row. Take a break: leverage packs open again for this wallet in ${wait(until - now)}.`);
     const own = (await this.ownLimit(wallet, now)).limit;
     if (own !== null) {
-      const left = own - await this.lossLast24h(wallet, now);
+      // Packs already paid for can still lose, so they count against the limit until they settle.
+      const open = Number((await this.db.query<{ total: string }>(
+        "SELECT COALESCE(SUM((data->>'maxLossMicros')::bigint),0)::text AS total FROM orders WHERE wallet=$1 AND payment_signature IS NOT NULL AND status NOT IN ('complete','refunded','expired')", [wallet])).rows[0].total);
+      const left = own - await this.lossLast24h(wallet, now) - open;
       if (left < maxLossMicros) throw httpError(429, `This pack could take you past your own daily loss limit (${usd(Math.max(0, left))} left in the last 24 hours).`);
     }
     if (s.perWalletDailyPacks > 0 || s.perWalletDailyUsd > 0) {

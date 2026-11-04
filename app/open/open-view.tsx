@@ -65,7 +65,9 @@ export function OpenView() {
       try { signedTx = toBase64((await signTransaction(VersionedTransaction.deserialize(fromBase64(transaction)))).serialize()); }
       catch { await apiPost(`/api/orders/${created.id}/cancel`).catch(() => {}); throw new Error('The payment was not approved in your wallet. Nothing was charged.'); }
       setConfirming(false);
-      setOrder(await apiPost<OrderView>(`/api/orders/${created.id}/pay`, { signed: signedTx }));
+      // A refused payment must not leave this order blocking the next one. The server still watches for it until it expires.
+      try { setOrder(await apiPost<OrderView>(`/api/orders/${created.id}/pay`, { signed: signedTx })); }
+      catch (e) { await apiPost(`/api/orders/${created.id}/cancel`).catch(() => {}); throw e; }
     } catch (e) { setError((e as Error).message); setConfirming(false); }
     finally { setBusy(false); }
   }, [machine, offer, signTransaction]);
