@@ -18,6 +18,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local promo video, not part of the app.
+    "video/**",
   ]),
 ]);
 

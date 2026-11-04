@@ -44,3 +44,6 @@ next-env.d.ts
 # local embedded database and calibration reports
 /.data/
 /reports/
+
+# local promo video project and renders
+/video/
