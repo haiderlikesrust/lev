@@ -4,3 +4,4 @@
  */
 export const APP_NAME = 'long.cards';
 export const APP_TAGLINE = 'Go long or short on Collector Crypt packs';
+export const X_HANDLE = 'longdotcards';

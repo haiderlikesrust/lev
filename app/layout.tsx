@@ -8,7 +8,7 @@ import { Nav } from '@/components/nav';
 import { Wordmark } from '@/components/logo';
 import { CoinAddress } from '@/components/coin-address';
 import { coinView } from '@/lib/server/coin';
-import { APP_NAME, APP_TAGLINE } from '@/lib/shared/brand';
+import { APP_NAME, APP_TAGLINE, X_HANDLE } from '@/lib/shared/brand';
 
 const inter = Inter({ variable: '--font-inter', subsets: ['latin'] });
 const silkscreen = Silkscreen({ variable: '--font-silkscreen', weight: '400', subsets: ['latin'] });
@@ -49,6 +49,10 @@ async function Site({ children }: { children: ReactNode }) {
           <div className="flex flex-col items-start gap-2.5">
             <Wordmark className="h-7" />
             <CoinAddress coin={coinView()} practice={practice} variant="footer" />
+            <a href={`https://x.com/${X_HANDLE}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 py-1 font-medium text-white/80 hover:text-white">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" /></svg>
+              @{X_HANDLE}
+            </a>
           </div>
           <span className="max-w-2xl sm:text-right">An independent add-on to Collector Crypt packs, funded by our coin&apos;s creator fees. Leverage packs are high risk: you can lose your entire pack price. 18+.</span>
         </div>
