@@ -32,8 +32,8 @@ export class LevPool {
   /** Why new packs can't start right now, or null. Packs in progress always settle. */
   async pauseReason(free?: number) {
     const s = this.settings.current;
-    if (s.paused) return 'Leverage packs are paused by the team.';
-    if ((free ?? await this.free()) < s.pauseThresholdUsd * 1_000_000) return `The pool is below its ${usd(s.pauseThresholdUsd * 1_000_000)} safety line, so new packs are paused until it refills.`;
+    if (s.paused) return 'New packs are paused right now.';
+    if (s.pauseThresholdUsd > 0 && (free ?? await this.free()) < s.pauseThresholdUsd * 1_000_000) return `The pool is below its ${usd(s.pauseThresholdUsd * 1_000_000)} safety line, so new packs are paused until it refills.`;
     return null;
   }
 

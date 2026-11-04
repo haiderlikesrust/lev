@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { usePoll, mult, pct, usdShort } from '@/lib/client/api';
+import { lockLabel, usePoll, mult, pct } from '@/lib/client/api';
 import { LEVEL_NAME } from '@/lib/shared/leverage';
 import type { ConfigView } from '@/lib/shared/types';
 import { HpBar } from './hp-bar';
@@ -43,14 +43,14 @@ export function LiveLevels() {
                     <td key={level} className="px-3 py-3">
                       {o.available
                         ? <Link href={`/open?machine=${m.code}&level=${level}`} className="font-semibold tabular-nums text-ink hover:text-poke-blue">{mult(o.multiplierBps)} <span className="font-normal text-muted">· avg {pct(o.playerReturn)}</span></Link>
-                        : <Locked title={o.reason ?? ''}>{o.reason?.startsWith('Unlocks') ? `at ${usdShort(o.unlockAtUsd)} pool` : 'collecting data'}</Locked>}
+                        : <Locked title={o.reason ?? ''}>{lockLabel(o)}</Locked>}
                     </td>
                   );
                 })}
                 <td className="px-3 py-3">
                   {!m.short ? <span className="text-muted">—</span> : m.short.available
                     ? <Link href={`/open?machine=${m.code}&side=short`} className="font-semibold tabular-nums text-ink hover:text-poke-blue">{mult(m.short.multiplierBps)} <span className="font-normal text-muted">· wins {Math.round(m.short.pWin * 100)}%</span></Link>
-                    : <Locked title={m.short.reason ?? ''}>{m.short.reason?.startsWith('Unlocks') ? `at ${usdShort(m.short.unlockAtUsd)} pool` : 'collecting data'}</Locked>}
+                    : <Locked title={m.short.reason ?? ''}>{lockLabel(m.short)}</Locked>}
                 </td>
               </tr>
             ))}

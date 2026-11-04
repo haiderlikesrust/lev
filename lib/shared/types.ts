@@ -41,7 +41,7 @@ export type SettlementView = {
 export type OfferView = Omit<Offer, 'capMicros' | 'maxLossMicros' | 'unlockAtMicros'> & { capUsd: number; maxLossUsd: number; unlockAtUsd: number };
 
 export type MachineView = {
-  code: string; name: string; priceUsd: number; buybackPct: number; image: string | null; video: string | null; open: boolean; disabled: boolean;
+  code: string; name: string; priceUsd: number; buybackPct: number; image: string | null; video: string | null; open: boolean;
   calibratedAt: number | null; pulls: number; offers: OfferView[];
   /** Shorting the next pull on this machine; null until calibrated. */
   short: OfferView | null;
@@ -99,7 +99,7 @@ export type ConfigView = {
   machines: MachineView[]; pool: PoolView;
   rules: {
     cooldownLosses: number; cooldownMinutes: number; capBps: number; edgeBps: number; minEdgeBps: number;
-    minCapMultiple: number; pauseThresholdUsd: number; targetReserveUsd: number; calibrationWindowDays: number; ruinProbability: number;
+    minCapMultiple: number; targetReserveUsd: number; calibrationWindowDays: number; ruinProbability: number;
     shortsEnabled: boolean; shortGuardSeconds: number; shortWaitMinutes: number;
   };
 };

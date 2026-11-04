@@ -3,10 +3,11 @@ import type { Level } from './leverage';
 
 /**
  * Owner-editable settings. Player limits default to off (0 = no limit), like Pullback; the pool is
- * protected by the per-pack cap, the unlock rule and the auto-pause instead.
- * TODO: every number here is a launch default to confirm (edge, cap, pause threshold, target, cool-down).
+ * protected by the per-pack cap and the unlock rule instead.
+ * TODO: every number here is a launch default to confirm (edge, cap, target, cool-down).
  */
 export type Settings = {
+  /** Stops new packs and fee claims at once. To close packs and keep filling the pool, use `disabledMachines`. */
   paused: boolean;
   /** Pool edge per pack at launch, and the lower edge a machine moves to once its data supports it (bps of the pack price). */
   edgeBps: number; minEdgeBps: number;
@@ -17,7 +18,7 @@ export type Settings = {
   /** A level opens only once the pool covers its bankroll for this chance of ruin. */
   ruinProbability: number;
   calibrationWindowDays: number; calibrationMaxAgeHours: number; minSamples: number;
-  /** New packs stop when the free pool drops below this; packs in progress still settle. */
+  /** New packs stop when the free pool drops below this; packs in progress still settle. 0 = off. */
   pauseThresholdUsd: number;
   /** The pool size the health meter reads as 100%. */
   targetReserveUsd: number;
@@ -50,7 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   edgeBps: 500, minEdgeBps: 300,
   capBps: 1_000, minCapMultiple: 10, ruinProbability: 0.01,
   calibrationWindowDays: 30, calibrationMaxAgeHours: 48, minSamples: 200,
-  pauseThresholdUsd: 1_000, targetReserveUsd: 50_000,
+  pauseThresholdUsd: 0, targetReserveUsd: 50_000,
   perWalletDailyPacks: 0, perWalletDailyUsd: 0, globalDailyUsd: 0,
   cooldownLosses: 5, cooldownMinutes: 10,
   levels: { half: true, full: true },

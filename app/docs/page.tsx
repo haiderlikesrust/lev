@@ -136,7 +136,7 @@ export default function DocsPage() {
             <li><strong>Money out:</strong> win bonuses and Half-risk floors.</li>
             <li><strong>Reservations:</strong> while a pack is open, its biggest possible bonus is set aside, so every bonus in progress is always payable. &ldquo;Free&rdquo; balance is what&apos;s left.</li>
             <li><strong>Unlocks:</strong> a level opens only when the free pool can absorb that level&apos;s ups and downs (under a <Rule name="ruin" /> chance of running dry) and its bonus cap is at least <Rule name="minCap" />. Bigger machines unlock as the pool grows.</li>
-            <li><strong>Auto-pause:</strong> if the free pool drops under <Rule name="pause" />, new packs pause until it refills; packs in progress still settle. A machine also pauses if its odds haven&apos;t been re-checked in 48 hours.</li>
+            <li><strong>Odds checks:</strong> a machine pauses if its odds haven&apos;t been re-checked in 48 hours. Packs in progress still settle.</li>
             <li><strong>Pool HP:</strong> the health bar shows the free pool against a <Rule name="target" /> target.</li>
           </ul>
           <Wallets />

@@ -3,11 +3,11 @@ import { useState } from 'react';
 import { Flame } from 'lucide-react';
 import { useSession } from '@/components/providers';
 import { Button, Card, Label } from '@/components/ui';
-import { apiPost, mult, timeAgo, usePoll } from '@/lib/client/api';
+import { apiPost, mult, timeAgo, usdShort, usePoll } from '@/lib/client/api';
 import { LEVELS, LEVEL_NAME } from '@/lib/shared/leverage';
 import { MACHINES } from '@/lib/shared/machines';
 import type { Settings } from '@/lib/shared/settings';
-import type { OrderView } from '@/lib/shared/types';
+import type { ConfigView, OfferView, OrderView } from '@/lib/shared/types';
 
 type Buyback = { heldUsd: number; totalHeldUsd: number; mintSet: boolean; burns: { id: string; status: string; usdcUsd: number; tokens: string | null; swapSignature: string | null; burnSignature: string | null; createdAt: number; error: string | null }[] };
 type AdminData = { settings: Settings; review: (OrderView & { error: string | null })[]; audit: { event: string; data: { error?: string; id?: string } | null; at: number }[]; buyback: Buyback };
@@ -17,7 +17,7 @@ const FIELDS: { key: keyof Settings; label: string; hint: string }[] = [
   { key: 'minEdgeBps', label: 'Lower pool edge (bps)', hint: 'used once a machine’s data supports it' },
   { key: 'capBps', label: 'Bonus cap (bps of free pool)', hint: '1000 = 10% of the free pool per pack' },
   { key: 'minCapMultiple', label: 'Min cap (× pack price)', hint: 'a level opens only with at least this cap' },
-  { key: 'pauseThresholdUsd', label: 'Auto-pause below ($)', hint: 'free pool' },
+  { key: 'pauseThresholdUsd', label: 'Auto-pause below ($)', hint: 'free pool; 0 = off' },
   { key: 'targetReserveUsd', label: 'Health target ($)', hint: '100% on the HP bar' },
   { key: 'cooldownLosses', label: 'Cool-down after losses in a row', hint: '0 = off' },
   { key: 'cooldownMinutes', label: 'Cool-down minutes', hint: '' },
@@ -34,10 +34,29 @@ const FIELDS: { key: keyof Settings; label: string; hint: string }[] = [
   { key: 'maxPriceImpactBps', label: 'Fee sale price impact (bps)', hint: 'larger sales split into parts' },
 ];
 
+function Switch({ on, label, disabled, onChange }: { on: boolean; label: string; disabled: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={() => onChange(!on)}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${on ? 'bg-ink' : 'bg-line'}`}>
+      <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-5' : ''}`} />
+    </button>
+  );
+}
+
+/** What players get from one level of one machine right now. A switched-on level can still be waiting for pool size. */
+function liveText(on: boolean, offer: OfferView | null | undefined) {
+  if (!on) return 'off';
+  if (!offer) return 'no data yet';
+  if (offer.available) return 'live';
+  if (offer.reason?.startsWith('Unlocks')) return `opens at ${usdShort(offer.unlockAtUsd)} pool`;
+  return offer.reason?.startsWith('Collecting') ? 'needs more pulls' : offer.reason ?? 'waiting';
+}
+
 export function AdminView() {
   const { me } = useSession();
   const owner = !!me?.wallet && me.owner;
   const { data, setData, error: loadError } = usePoll<AdminData>(owner ? '/api/admin' : null, 15_000);
+  const { data: live, reload: reloadLive } = usePoll<ConfigView>(owner ? '/api/config' : null, 15_000);
   const [edited, setDraft] = useState<Settings | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   // The form shows the saved settings until the owner edits something.
   const draft = edited ?? data?.settings ?? null;
@@ -52,16 +71,70 @@ export function AdminView() {
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
 
+  // Switches save at once from the saved settings, so half-typed edits in the form below stay unsaved.
+  const saved = data.settings;
+  const toggle = async (change: Partial<Settings>) => {
+    setBusy(true); setError(null);
+    try {
+      const next = await apiPost<{ settings: Settings; review: AdminData['review']; buyback: Buyback }>('/api/admin', { action: 'settings', settings: { ...saved, ...change } });
+      setData({ ...data, ...next });
+      if (edited) setDraft({ ...edited, ...change });
+      await reloadLive();
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-bold tracking-tight">Admin</h1>
         <div className="flex gap-2">
-          <Button variant={draft.paused ? 'primary' : 'red'} disabled={busy} onClick={() => void act({ action: 'settings', settings: { ...draft, paused: !draft.paused } })}>{draft.paused ? 'Resume leverage packs' : 'Pause leverage packs'}</Button>
+          <Button variant={saved.paused ? 'primary' : 'red'} disabled={busy} onClick={() => void toggle({ paused: !saved.paused })}>{saved.paused ? 'Resume everything' : 'Pause everything'}</Button>
           <Button variant="ghost" disabled={busy} onClick={() => void act({ action: 'recalibrate' })}>Recalibrate now</Button>
         </div>
       </div>
       {error && <p className="text-sm text-loss">{error}</p>}
+
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <Label>Packs · owner only</Label>
+            <p className="mt-1 max-w-xl text-sm text-muted">Turn packs on or off for players. Changes apply straight away, open packs still settle, and creator fees keep filling the pool. Pause everything also stops fee claims.</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" disabled={busy || !saved.disabledMachines.length} onClick={() => void toggle({ disabledMachines: [] })}>All on</Button>
+            <Button variant="ghost" disabled={busy || saved.disabledMachines.length === MACHINES.length} onClick={() => void toggle({ disabledMachines: MACHINES.map(m => m.code) })}>All off</Button>
+          </div>
+        </div>
+        {saved.paused && <p className="mt-3 rounded-2xl bg-poke-red/10 px-4 py-3 text-sm text-loss">Everything is paused: no new packs and no fee claims.</p>}
+        <ul className="mt-3 divide-y divide-line text-sm">
+          {MACHINES.map(m => {
+            const on = !saved.disabledMachines.includes(m.code), machine = live?.machines.find(x => x.code === m.code);
+            const parts = [
+              ...LEVELS.map(l => ({ name: LEVEL_NAME[l], on: saved.levels[l], offer: machine?.offers.find(o => o.level === l) })),
+              { name: 'Short', on: saved.shortsEnabled, offer: machine?.short },
+            ];
+            return (
+              <li key={m.code} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-3">
+                <Switch on={on} label={`$${m.priceUsd} ${m.name}`} disabled={busy} onChange={next => void toggle({ disabledMachines: next ? saved.disabledMachines.filter(c => c !== m.code) : [...saved.disabledMachines, m.code] })} />
+                <span className="w-32 font-medium">${m.priceUsd} {m.name}</span>
+                <span className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted">
+                  {parts.map(p => {
+                    const text = saved.paused ? 'paused' : liveText(on && p.on, p.offer);
+                    return <span key={p.name}>{p.name}: <span className={text === 'live' ? 'font-semibold text-ink' : ''}>{text}</span></span>;
+                  })}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="mt-1 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-line pt-4 text-sm">
+          <span className="font-medium">On every machine</span>
+          {LEVELS.map(l => (
+            <span key={l} className="flex items-center gap-2"><Switch on={saved.levels[l]} label={LEVEL_NAME[l]} disabled={busy} onChange={next => void toggle({ levels: { ...saved.levels, [l]: next } })} />{LEVEL_NAME[l]}</span>
+          ))}
+          <span className="flex items-center gap-2"><Switch on={saved.shortsEnabled} label="Short" disabled={busy} onChange={next => void toggle({ shortsEnabled: next })} />Short</span>
+        </div>
+      </Card>
 
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -115,7 +188,7 @@ export function AdminView() {
 
       <Card>
         <Label>Settings</Label>
-        <p className="mt-1 text-sm text-muted">Player limits default to off. The pool is protected by the bonus cap, the unlock rule and the auto-pause. Changing an edge recalibrates every machine.</p>
+        <p className="mt-1 text-sm text-muted">Player limits default to off. The pool is protected by the bonus cap and the unlock rule. Changing an edge recalibrates every machine.</p>
         <form className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" onSubmit={e => { e.preventDefault(); void act({ action: 'settings', settings: draft }); }}>
           {FIELDS.map(f => (
             <label key={f.key} className="text-sm">
@@ -125,21 +198,6 @@ export function AdminView() {
               {f.hint && <span className="mt-0.5 block text-xs text-muted">{f.hint}</span>}
             </label>
           ))}
-          <div className="text-sm sm:col-span-2 lg:col-span-3">
-            <div className="font-medium">Levels</div>
-            <div className="mt-2 flex flex-wrap gap-4">
-              {LEVELS.map(l => (
-                <label key={l} className="flex items-center gap-2"><input type="checkbox" checked={draft.levels[l]} onChange={e => setDraft({ ...draft, levels: { ...draft.levels, [l]: e.target.checked } })} className="accent-ink" />{LEVEL_NAME[l]}</label>
-              ))}
-              <label className="flex items-center gap-2"><input type="checkbox" checked={draft.shortsEnabled} onChange={e => setDraft({ ...draft, shortsEnabled: e.target.checked })} className="accent-ink" />Short</label>
-            </div>
-            <div className="mt-4 font-medium">Machines</div>
-            <div className="mt-2 flex flex-wrap gap-4">
-              {MACHINES.map(m => (
-                <label key={m.code} className="flex items-center gap-2"><input type="checkbox" checked={!draft.disabledMachines.includes(m.code)} onChange={e => setDraft({ ...draft, disabledMachines: e.target.checked ? draft.disabledMachines.filter(c => c !== m.code) : [...draft.disabledMachines, m.code] })} className="accent-ink" />${m.priceUsd} {m.name}</label>
-              ))}
-            </div>
-          </div>
           <div className="sm:col-span-2 lg:col-span-3"><Button type="submit" disabled={busy}>Save settings</Button></div>
         </form>
       </Card>

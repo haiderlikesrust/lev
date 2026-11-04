@@ -85,7 +85,7 @@ The new container's log shows `[coordinator] standby: waiting for the running se
    Calibration also runs by itself every day; the command prints the current numbers.
 4. Set `MAINNET_ENABLED=true` and redeploy. Start with a tiny pool: one $25 Half-risk pack, then compare the Pool page with the wallets on Solscan.
 
-To stop spending at any time, use **Pause** in `/admin`. It takes effect immediately and survives updates.
+To stop spending at any time, use **Pause everything** in `/admin`. It takes effect immediately and survives updates.
 
 ## Rules that keep updates seamless
 

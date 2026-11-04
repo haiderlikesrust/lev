@@ -7,7 +7,7 @@ import { ExternalLink, Locked } from './ui';
 function useConfig() { return usePoll<ConfigView>('/api/config', 60_000).data; }
 
 /** One live rule value inline in a sentence, e.g. <Rule name="cap" />. */
-export function Rule({ name }: { name: 'cap' | 'edge' | 'minEdge' | 'cooldown' | 'pause' | 'target' | 'minCap' | 'window' | 'ruin' | 'shortGuard' | 'shortWait' }) {
+export function Rule({ name }: { name: 'cap' | 'edge' | 'minEdge' | 'cooldown' | 'target' | 'minCap' | 'window' | 'ruin' | 'shortGuard' | 'shortWait' }) {
   const c = useConfig();
   if (!c) return <span className="inline-block h-4 w-10 animate-pulse rounded bg-mist align-middle" />;
   const r = c.rules;
@@ -16,7 +16,6 @@ export function Rule({ name }: { name: 'cap' | 'edge' | 'minEdge' | 'cooldown' |
     edge: `${r.edgeBps / 100}%`,
     minEdge: `${r.minEdgeBps / 100}%`,
     cooldown: `${r.cooldownLosses} losses in a row → ${r.cooldownMinutes}-minute break`,
-    pause: usdShort(r.pauseThresholdUsd),
     target: usdShort(r.targetReserveUsd),
     minCap: `${r.minCapMultiple}× the pack price`,
     window: `${r.calibrationWindowDays} days`,

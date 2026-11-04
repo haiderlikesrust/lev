@@ -3,8 +3,10 @@ import { Keypair } from '@solana/web3.js';
 import { openDatabase } from '@/lib/server/db';
 import { MockPacks, MockSolana } from '@/lib/server/mock';
 import { recordCreatorFees } from '@/lib/server/burns';
+import { lockLabel } from '@/lib/client/api';
 import { insuredUsd, parsePull } from '@/lib/server/cc/client';
 import { bootstrap, createServices } from '@/lib/server/services';
+import { machinesView } from '@/lib/server/views';
 import type { Level } from '@/lib/shared/leverage';
 
 const M = 1_000_000;
@@ -178,9 +180,45 @@ describe('leverage packs (practice mode)', () => {
     await expect(ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'full', true)).rejects.toThrow(/own daily loss limit/);
   });
 
-  it('pauses new packs below the safety line', async () => {
+  it('has no pool safety line by default, but a level still waits for its unlock size', async () => {
     const ctx = await setup(500);
+    expect(await ctx.s.pool.pauseReason()).toBeNull();
+    await expect(ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'half', true)).rejects.toThrow(/Unlocks when the pool reaches/);
+  });
+
+  it('pauses new packs below the safety line when one is set', async () => {
+    const ctx = await setup(500);
+    ctx.s.settings.current = { ...ctx.s.settings.current, pauseThresholdUsd: 1_000 };
     await expect(ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'half', true)).rejects.toThrow(/safety line/);
+  });
+
+  it('shows one neutral message for a pack that is not available', async () => {
+    const ctx = await setup(), { s } = ctx, view = () => machinesView(s.db, s.pool, s.packs, s.settings, s.collector);
+    s.settings.current = { ...s.settings.current, disabledMachines: ['pokemon_25'] };
+    await expect(s.orders.create(ctx.wallet, 'pokemon_25', 'half', true)).rejects.toThrow(/not available/);
+    await expect(s.orders.create(ctx.wallet, 'pokemon_25', 'full', true, undefined, 'short')).rejects.toThrow(/not available/);
+    const closed = (await view()).find(m => m.code === 'pokemon_25')!;
+    expect([...closed.offers, closed.short].every(o => !o?.available)).toBe(true);
+    expect(JSON.stringify(closed)).not.toMatch(/team|admin|owner|disabled|turned off/i);
+    expect(lockLabel(closed.offers[0])).toBe('unavailable');
+
+    s.settings.current = { ...s.settings.current, disabledMachines: [], levels: { half: false, full: true }, shortsEnabled: false };
+    const part = (await view()).find(m => m.code === 'pokemon_25')!;
+    expect(part.offers.find(o => o.level === 'half')?.reason).toBe('Not available right now.');
+    expect(part.offers.find(o => o.level === 'full')?.available).toBe(true);
+    expect(part.short?.reason).toBe('Not available right now.');
+
+    s.settings.current = { ...s.settings.current, levels: { half: true, full: true }, shortsEnabled: true, paused: true };
+    expect(await s.pool.pauseReason()).not.toMatch(/team|admin|owner/i);
+  });
+
+  it('keeps claiming fees while packs are switched off, but not when everything is paused', async () => {
+    const ctx = await setup(), { s } = ctx;
+    ctx.solana.creatorFeesDue = async () => true;
+    s.settings.current = { ...s.settings.current, disabledMachines: ['pokemon_25', 'pokemon_50'] };
+    expect(await s.burns.feesDue()).toBe(true);
+    s.settings.current = { ...s.settings.current, paused: true };
+    expect(await s.burns.feesDue()).toBe(false);
   });
 });
 

@@ -101,7 +101,7 @@ The same pulls price shorts (`lib/shared/short.ts`): the pool's EV per short is 
 - **Own wallet:** `LEV_POOL`, our coin's dev wallet. Nothing is shared with Pullback.
 - **Bonus cap:** 10% of the free pool per pack, locked at quote. Every pack in progress reserves its cap.
 - **Auto-pause:**
-  - globally, below the safety line ($1,000 free by default);
+  - globally, below an optional safety line (off by default, set in `/admin`);
   - per machine, when calibration is over 48 h old.
 - **Volume limits:** per-wallet and global daily limits exist but default to **off** (0), like Pullback.
 - **Responsible play:**

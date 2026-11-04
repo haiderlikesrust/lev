@@ -4,7 +4,7 @@ import { ArrowRight } from 'lucide-react';
 import { useHomeData } from './home-data';
 import { MachineArt } from '../machine-art';
 import { Locked } from '../ui';
-import { mult, usdShort } from '@/lib/client/api';
+import { lockLabel, mult, usdShort } from '@/lib/client/api';
 
 /** Every machine with CC's own art and its live Half / Full multipliers (or what it's waiting for). */
 export function MachineShowcase() {
@@ -30,7 +30,7 @@ export function MachineShowcase() {
                 {m.offers.map(o => (
                   <div key={o.level} className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-1.5 text-muted"><span className={`h-1.5 w-1.5 rounded-full ${o.level === 'full' ? 'bg-poke-red' : 'bg-poke-blue'}`} />{o.level === 'full' ? 'Full' : 'Half'}</span>
-                    {o.available ? <span className="font-bold tabular-nums">{mult(o.multiplierBps)}</span> : <Locked>{o.reason?.startsWith('Unlocks') ? usdShort(o.unlockAtUsd) : 'data'}</Locked>}
+                    {o.available ? <span className="font-bold tabular-nums">{mult(o.multiplierBps)}</span> : <Locked>{lockLabel(o, usdShort(o.unlockAtUsd), 'data')}</Locked>}
                   </div>
                 ))}
               </div>

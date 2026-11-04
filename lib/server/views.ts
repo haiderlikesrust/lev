@@ -39,6 +39,9 @@ export async function poolView(db: Database, pool: LevPool): Promise<PoolView> {
   };
 }
 
+/** Shown to players for a pack that isn't available. */
+const OFF = 'Not available right now.';
+
 export async function machinesView(db: Database, pool: LevPool, packs: PackProvider, settings: SettingsStore, collector: Collector): Promise<MachineView[]> {
   const [configs, rows, shorts, free, open] = [await collector.configs(), await loadCalibration(db), await loadShortCalibration(db), await pool.free(), await packs.openMachines().catch(() => new Set<string>())];
   const s = settings.current, now = Date.now();
@@ -47,15 +50,15 @@ export async function machinesView(db: Database, pool: LevPool, packs: PackProvi
     if (!c) return [];
     const own = rows.filter(r => r.code === def.code);
     const ctx = { priceMicros: c.priceUsd * 1_000_000, freeMicros: free, minValueMicros: c.tierRanges.common.start * 1_000_000, now, settings: s };
-    const closed = s.disabledMachines.includes(def.code) ? 'This machine is turned off by the team.' : !open.has(def.code) ? 'Collector Crypt is not selling from this machine right now.' : null;
+    const closed = s.disabledMachines.includes(def.code) ? OFF : !open.has(def.code) ? 'Collector Crypt is not selling from this machine right now.' : null;
     const offers = LEVELS.flatMap(level => {
       const row = own.find(r => r.level === level);
       if (!row) return [];
-      const o = offer(row, ctx), off = !s.levels[level] ? 'Turned off by the team.' : closed;
+      const o = offer(row, ctx), off = !s.levels[level] ? OFF : closed;
       return [offerView(off ? { ...o, available: false, reason: off } : o)];
     });
-    const shortRow = shorts.find(r => r.code === def.code), so = shortRow ? shortOffer(shortRow, ctx) : null, shortOff = !s.shortsEnabled ? 'Turned off by the team.' : closed;
-    return [{ code: def.code, name: def.name, priceUsd: c.priceUsd, buybackPct: c.buybackPct, image: c.image ?? null, video: c.video ?? null, open: open.has(def.code), disabled: s.disabledMachines.includes(def.code),
+    const shortRow = shorts.find(r => r.code === def.code), so = shortRow ? shortOffer(shortRow, ctx) : null, shortOff = !s.shortsEnabled ? OFF : closed;
+    return [{ code: def.code, name: def.name, priceUsd: c.priceUsd, buybackPct: c.buybackPct, image: c.image ?? null, video: c.video ?? null, open: open.has(def.code),
       calibratedAt: own[0]?.computedAt ?? null, pulls: own[0]?.n ?? 0, offers, short: so ? offerView(shortOff ? { ...so, available: false, reason: shortOff } : so) : null }];
   });
 }
@@ -67,7 +70,7 @@ export async function configView(db: Database, solana: Solana, pool: LevPool, pa
     machines: await machinesView(db, pool, packs, settings, collector), pool: await poolView(db, pool),
     rules: {
       cooldownLosses: s.cooldownLosses, cooldownMinutes: s.cooldownMinutes, capBps: s.capBps, edgeBps: s.edgeBps, minEdgeBps: s.minEdgeBps,
-      minCapMultiple: s.minCapMultiple, pauseThresholdUsd: s.pauseThresholdUsd, targetReserveUsd: s.targetReserveUsd, calibrationWindowDays: s.calibrationWindowDays, ruinProbability: s.ruinProbability,
+      minCapMultiple: s.minCapMultiple, targetReserveUsd: s.targetReserveUsd, calibrationWindowDays: s.calibrationWindowDays, ruinProbability: s.ruinProbability,
       shortsEnabled: s.shortsEnabled, shortGuardSeconds: s.shortGuardSeconds, shortWaitMinutes: s.shortWaitMinutes,
     },
   };

@@ -35,6 +35,9 @@ export function usePoll<T>(url: string | null, everyMs = 0) {
 
 export const usd = (n: number, digits = 2) => `$${n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 export const usdShort = (n: number) => n >= 10_000 ? `$${Math.round(n / 1_000).toLocaleString('en-US')}k` : `$${Math.round(n).toLocaleString('en-US')}`;
+/** A locked level's short label: the pool size it opens at, or why else it's closed. */
+export const lockLabel = (o: { reason: string | null; unlockAtUsd: number }, unlock = `at ${usdShort(o.unlockAtUsd)} pool`, collecting = 'collecting data') =>
+  o.reason?.startsWith('Unlocks') ? unlock : o.reason?.startsWith('Collecting') ? collecting : 'unavailable';
 export const pct = (x: number, digits = 1) => `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(digits)}%`;
 export const chance = (p: number) => p < 0.01 && p > 0 ? '<1%' : `${Math.round(p * 100)}%`;
 export const mult = (bps: number) => `${(bps / 10_000).toFixed(2)}x`;
