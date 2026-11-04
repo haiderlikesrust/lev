@@ -49,7 +49,7 @@ export default function DocsPage() {
 
         <Section id="overview" title="Overview">
           <p>A leverage pack is a normal Collector Crypt (CC) pack with a deal attached before it opens. If your card is worth more than the pack price, the pool pays you a bonus on top of the card. If it&apos;s worth less, you don&apos;t get the card: the pool keeps it and sells it back to CC. Losers&apos; sellbacks pay winners&apos; bonuses, and the pool sits in the middle.</p>
-          <p>Leverage is optional. It sits next to Pullback&apos;s loss coverage, but they are separate: different wallets, different rules.</p>
+          <p>Leverage is optional, and you pick the level for each pack.</p>
           <Note><strong>HIGH RISK — you can lose your entire pack price.</strong> On average every level returns less than you pay, like a normal open. Only play with money you can afford to lose.</Note>
         </Section>
 
@@ -130,9 +130,9 @@ export default function DocsPage() {
         </Section>
 
         <Section id="pool" title="The pool">
-          <p>The leverage pool is its own wallet (LEV_POOL), separate from Pullback&apos;s loss-coverage pool, so a bad run of leverage packs can never touch loss coverage.</p>
+          <p>The leverage pool (LEV_POOL) is the wallet that holds the USDC for bonuses and receives our coin&apos;s creator fees.</p>
           <ul className="list-disc space-y-1.5 pl-5">
-            <li><strong>Money in:</strong> sellbacks of losing cards, plus 85% of our coin&apos;s creator fees. The fees are claimed in $CARDS and swapped to USDC on Jupiter, and every transfer into the pool is listed on the <Link href="/pool">Pool page</Link>.</li>
+            <li><strong>Money in:</strong> sellbacks of losing cards, plus 85% of our coin&apos;s creator fees. The fees are claimed automatically and swapped to USDC on Jupiter, and every claim is listed on the <Link href="/pool">Pool page</Link>.</li>
             <li><strong>Money out:</strong> win bonuses and Half-risk floors.</li>
             <li><strong>Reservations:</strong> while a pack is open, its biggest possible bonus is set aside, so every bonus in progress is always payable. &ldquo;Free&rdquo; balance is what&apos;s left.</li>
             <li><strong>Unlocks:</strong> a level opens only when the free pool can absorb that level&apos;s ups and downs (under a <Rule name="ruin" /> chance of running dry) and its bonus cap is at least <Rule name="minCap" />. Bigger machines unlock as the pool grows.</li>
@@ -186,7 +186,7 @@ export default function DocsPage() {
             ['Am I betting against another player?', 'Your short rides another player’s pull, but their pack isn’t touched and they never pay you. Your stake and winnings are with the pool.'],
             ['Which wallets work?', 'Phantom and Solflare. You need USDC for the pack and a little SOL (about 0.002) for the network fee.'],
             ['What if the card’s value isn’t known yet?', 'The pack waits until CC records it, well inside CC’s 72-hour buyback window. If it takes too long, the team settles it by hand.'],
-            ['Where does the bonus money come from?', 'From losing packs’ sellbacks, plus 85% of our coin’s creator fees, held in the separate leverage pool.'],
+            ['Where does the bonus money come from?', 'From losing packs’ sellbacks, plus 85% of our coin’s creator fees, held in the leverage pool.'],
           ].map(([q, a]) => (
             <details key={q} className="group rounded-2xl border border-line px-4 py-3">
               <summary className="cursor-pointer list-none font-medium after:float-right after:text-muted after:content-['+'] group-open:after:content-['−']">{q}</summary>

@@ -73,7 +73,7 @@ export function Wallets() {
   return (
     <ul className="rounded-2xl border border-line px-4">
       {row('LEV_OPS', c.opsAddress, 'takes payments, buys and opens packs, holds cards for seconds')}
-      {row('LEV_POOL', c.poolAddress, 'the leverage pool: receives sellbacks and fee splits, pays bonuses and floors')}
+      {row('LEV_POOL', c.poolAddress, 'the leverage pool: claims creator fees, receives sellbacks, pays bonuses and floors')}
     </ul>
   );
 }

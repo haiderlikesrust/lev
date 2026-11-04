@@ -6,7 +6,7 @@ import { httpError } from './redact';
 const usd = (micros: number) => `$${Math.floor(micros / 1_000_000).toLocaleString('en-US')}`;
 
 /**
- * The leverage pool's USDC (LEV_POOL), separate from Pullback's loss-coverage pool.
+ * The leverage pool's USDC (LEV_POOL), which is our coin's dev wallet.
  * Free balance = on-chain balance − the bonus caps reserved by packs in progress, so every
  * bonus a pack in progress could win is always payable.
  */

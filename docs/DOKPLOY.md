@@ -75,7 +75,7 @@ The new container's log shows `[coordinator] standby: waiting for the running se
 
 ## Go live
 
-1. Add `OWNER_WALLET`, `SOLANA_RPC_URL` (a paid RPC), `COLLECTOR_CRYPT_API_KEY`, `FEE_SOURCE_WALLET`, `MEMECOIN_MINT`, `JUPITER_API_KEY` and both wallet keys, then redeploy.
+1. Add `OWNER_WALLET`, `SOLANA_RPC_URL` (a paid RPC), `COLLECTOR_CRYPT_API_KEY`, `MEMECOIN_MINT`, `JUPITER_API_KEY` and both wallet keys, then redeploy.
 2. Fund the wallets: SOL for fees in both, a USDC token account in both, and the starting USDC in `LEV_POOL`.
 3. Open the application's terminal in Dokploy and run the read-only checks:
    ```sh

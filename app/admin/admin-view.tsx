@@ -29,7 +29,9 @@ const FIELDS: { key: keyof Settings; label: string; hint: string }[] = [
   { key: 'shortGuardSeconds', label: 'Short guard (seconds)', hint: 'a short rides pulls CC stamps this long after payment' },
   { key: 'shortWaitMinutes', label: 'Short max wait (minutes)', hint: 'refunded in full if no pull comes' },
   { key: 'feePoolShareBps', label: 'Creator fees to pool (bps)', hint: '8500 = 85%; the rest is held for your buyback' },
-  { key: 'buybackSlippageBps', label: 'Buyback slippage (bps)', hint: '100 = 1%' },
+  { key: 'buybackSlippageBps', label: 'Swap slippage (bps)', hint: '100 = 1%; fee sales and the buyback' },
+  { key: 'creatorFeeMinUsd', label: 'Claim fees from ($)', hint: 'claim once this much has built up' },
+  { key: 'maxPriceImpactBps', label: 'Fee sale price impact (bps)', hint: 'larger sales split into parts' },
 ];
 
 export function AdminView() {
@@ -65,7 +67,7 @@ export function AdminView() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <Label>Coin buyback &amp; burn · owner only</Label>
-            <p className="mt-1 max-w-xl text-sm text-muted">{100 - draft.feePoolShareBps / 100}% of incoming creator fees is held here instead of joining the pool. It only moves when you click: LEV_POOL swaps it into the coin on Jupiter and burns it.</p>
+            <p className="mt-1 max-w-xl text-sm text-muted">Creator fees are claimed automatically, and {100 - draft.feePoolShareBps / 100}% of each claim is held here instead of joining the pool. It only moves when you click: LEV_POOL swaps it into the coin on Jupiter and burns it.</p>
           </div>
           <div className="text-right">
             <div className="text-3xl font-bold tabular-nums">${data.buyback.heldUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>

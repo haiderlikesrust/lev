@@ -2,7 +2,7 @@
  * Read-only launch checks. Nothing is signed or sent.
  *  1. Collector Crypt: the documented endpoints this app uses answer, and an API key is set.
  *  2. Wallets: LEV_OPS and LEV_POOL load, differ, and have SOL and a USDC account.
- *  3. Creator fees: the fee source wallet, coin mint and Jupiter key are configured.
+ *  3. Coin: the mint and Jupiter key are configured.
  *
  *   npm run check
  */
@@ -50,7 +50,6 @@ for (const [name, secret] of signers) {
 }
 if (keys.length === 2 && keys[0] === keys[1]) warn('LEV_OPS and LEV_POOL must be different wallets.');
 
-console.log('\n3. Creator fees');
-(config.FEE_SOURCE_WALLET ? ok : warn)(config.FEE_SOURCE_WALLET ? `Counting creator-fee transfers from ${config.FEE_SOURCE_WALLET}` : 'FEE_SOURCE_WALLET is not set: creator-fee income will not be indexed.');
-(config.MEMECOIN_MINT ? ok : warn)(config.MEMECOIN_MINT ? `Coin mint ${config.MEMECOIN_MINT}` : 'MEMECOIN_MINT is not set: the owner buyback cannot run.');
+console.log('\n3. Coin');
+(config.MEMECOIN_MINT ? ok : warn)(config.MEMECOIN_MINT ? `Coin mint ${config.MEMECOIN_MINT}` : 'MEMECOIN_MINT is not set: creator fees cannot be claimed and the owner buyback cannot run.');
 (config.JUPITER_API_KEY ? ok : warn)(config.JUPITER_API_KEY ? 'JUPITER_API_KEY is set' : 'JUPITER_API_KEY is not set: swaps cannot run.');

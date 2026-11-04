@@ -76,7 +76,7 @@ export default function Home() {
         </section>
 
         <section>
-          <SectionHead kicker="The pool" title="The pool sits in the middle" lede="A separate wallet, so leverage never touches Pullback's loss coverage. Bigger machines unlock as it grows." />
+          <SectionHead kicker="The pool" title="The pool sits in the middle" lede="Funded by losing packs and our coin's creator fees. Bigger machines unlock as it grows." />
           <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-[1fr_auto_1.1fr_auto_1fr]">
             <FlowNode icon={<TrendingDown size={20} />} tone="red" title="Losing packs" text="The card is sold back to Collector Crypt; the USDC goes to the pool." />
             <FlowArrow />

@@ -1,4 +1,4 @@
-import { PublicKey, type Connection, type ParsedTransactionWithMeta } from '@solana/web3.js';
+import { PublicKey, type Connection } from '@solana/web3.js';
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import bs58 from 'bs58';
 import { config } from './config';
@@ -8,8 +8,10 @@ import { CollectorCrypt, vrfVerifyUrl } from './cc/client';
 import { buyPack } from './cc/purchase';
 import { sellBack } from './cc/sellback';
 import type { PurchaseStore, SaleStore } from './cc/store';
-import type { BuiltPayment, FeeSplit, PackProvider, PaymentState, Solana } from './ports';
+import type { BuiltPayment, PackProvider, PaymentState, Solana } from './ports';
 import type { MachineConfig } from '../shared/machines';
+import type { Settings } from '../shared/settings';
+import { collectCreatorFees, creatorFeesDue } from './fees';
 import { swap } from './swap';
 import { ReviewRequired } from './jobs';
 
@@ -20,24 +22,6 @@ export function paymentFailure(message: string) {
   if (/invalid account data|could not find account|AccountNotFound|0x3\b/i.test(message)) return 'This wallet has no USDC yet. Add USDC to it and try again. Nothing was charged.';
   if (/blockhash not found|block height exceeded|expired/i.test(message)) return 'The payment took too long to approve. Please try again. Nothing was charged.';
   return 'The payment could not be sent. Please try again. Nothing was charged.';
-}
-
-const FEE_SPLIT_MEMO = /^fee-split:([A-Za-z0-9_.:-]{1,80})$/;
-
-/** Finds a USDC transfer from Pullback's POOL into LEV_POOL tagged `fee-split:<cycle>`. */
-export function parseFeeSplit(tx: ParsedTransactionWithMeta | null, from: string, poolAta: string): FeeSplit | null {
-  if (!tx?.meta || tx.meta.err || !tx.blockTime) return null;
-  let amount = 0n, cycle: string | null = null;
-  for (const ix of tx.transaction.message.instructions) {
-    if (!('parsed' in ix)) continue;
-    if (ix.program === 'spl-memo' && typeof ix.parsed === 'string') cycle = FEE_SPLIT_MEMO.exec(ix.parsed)?.[1] ?? cycle;
-    if (ix.program === 'spl-token' && (ix.parsed?.type === 'transfer' || ix.parsed?.type === 'transferChecked')) {
-      const info = ix.parsed.info;
-      if (info.destination === poolAta && (info.authority ?? info.multisigAuthority) === from) amount += BigInt(info.tokenAmount?.amount ?? info.amount);
-    }
-  }
-  if (!cycle || amount <= 0n) return null;
-  return { signature: tx.transaction.signatures[0], amountMicros: Number(amount), cycle, from, receivedAt: tx.blockTime * 1000 };
 }
 
 /** Mainnet adapter: LEV_OPS and LEV_POOL are separate signing wallets sharing one RPC. */
@@ -110,17 +94,8 @@ export class LiveSolana implements Solana {
     return { usdcAccount: !!account.value, usdcMicros: BigInt(parsed?.info?.tokenAmount?.amount ?? 0), lamports: BigInt(lamports) };
   }
 
-  async feeSplits(after: string | null) {
-    if (!this.rpc || !this.poolAddress || !config.FEE_SOURCE_WALLET) return [];
-    const poolAta = getAssociatedTokenAddressSync(new PublicKey(config.USDC_MINT), new PublicKey(this.poolAddress)).toBase58();
-    const signatures = (await this.rpc.getSignaturesForAddress(new PublicKey(poolAta), { limit: 100, ...(after ? { until: after } : {}) }, 'confirmed')).filter(s => !s.err);
-    const found: FeeSplit[] = [];
-    for (let i = 0; i < signatures.length; i += 20) {
-      const txs = await this.rpc.getParsedTransactions(signatures.slice(i, i + 20).map(s => s.signature), { maxSupportedTransactionVersion: MAX_TX_VERSION, commitment: 'confirmed' });
-      for (const tx of txs) { const split = parseFeeSplit(tx, config.FEE_SOURCE_WALLET, poolAta); if (split) found.push(split); }
-    }
-    return found;
-  }
+  async creatorFeesDue(settings: Settings) { return this.canSpend && !!config.MEMECOIN_MINT && creatorFeesDue(this.pool, settings); }
+  collectCreatorFees(settings: Settings) { return collectCreatorFees(this.pool, settings); }
 
   async buybackAndBurn(jobId: string, usdcMicros: number, slippageBps: number) {
     if (!config.MEMECOIN_MINT) throw new ReviewRequired('Set MEMECOIN_MINT before buying back.');

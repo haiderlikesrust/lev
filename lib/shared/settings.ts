@@ -35,10 +35,14 @@ export type Settings = {
   /** A short with no pull after this long is refunded in full (a quiet machine, or CC's feed is down). */
   shortWaitMinutes: number;
   disabledMachines: string[];
-  /** Share of incoming creator-fee USDC that is pool money; the rest is held for the owner's buyback. */
+  /** Share of claimed creator-fee USDC that is pool money; the rest is held for the owner's buyback. */
   feePoolShareBps: number;
-  /** Slippage ceiling for the buyback swap. */
+  /** Slippage ceiling for our swaps: selling claimed fees and the buyback. */
   buybackSlippageBps: number;
+  /** Claim creator fees once at least this much has built up. */
+  creatorFeeMinUsd: number;
+  /** A fee sale that would move the price more than this splits into smaller parts. */
+  maxPriceImpactBps: number;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -52,7 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   levels: { half: true, full: true },
   shortsEnabled: true, shortGuardSeconds: 30, shortWaitMinutes: 60,
   disabledMachines: [],
-  feePoolShareBps: 8_500, buybackSlippageBps: 100,
+  feePoolShareBps: 8_500, buybackSlippageBps: 100, creatorFeeMinUsd: 2, maxPriceImpactBps: 300,
 };
 
 const nonNegative = z.number().finite().min(0);
@@ -68,4 +72,5 @@ export const settingsSchema = z.object({
   shortsEnabled: z.boolean(), shortGuardSeconds: z.number().min(0).max(600), shortWaitMinutes: z.number().min(1).max(24 * 60),
   disabledMachines: z.array(z.string().max(64)).max(64),
   feePoolShareBps: z.number().int().min(0).max(10_000), buybackSlippageBps: z.number().int().min(10).max(1_000),
+  creatorFeeMinUsd: nonNegative, maxPriceImpactBps: z.number().int().min(10).max(5_000),
 }).refine(s => s.minEdgeBps <= s.edgeBps, { message: 'The lower edge cannot be above the launch edge.' });

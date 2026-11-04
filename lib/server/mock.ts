@@ -5,7 +5,7 @@ import { config } from './config';
 import { buildPayment, validateSignedPayment, type PaymentIntent } from './payment';
 import { PendingOperation } from './jobs';
 import { loadSample } from './sample';
-import type { BuiltPayment, FeeSplit, PackProvider, PaymentState, PurchaseResult, SaleResult, Solana } from './ports';
+import type { BuiltPayment, PackProvider, PaymentState, PurchaseResult, SaleResult, Solana } from './ports';
 import type { Card, CollectorCrypt, FeedPull } from './cc/client';
 import { tierOf } from '../shared/machines';
 
@@ -24,7 +24,6 @@ export class MockSolana implements Solana {
   readonly opsAddress = fakeAddress();
   readonly poolAddress = fakeAddress();
   readonly usdc = new Map<string, bigint>();
-  readonly splits: FeeSplit[] = [];
   private submitted = new Map<string, { signature: string; at: number }>();
   private paid = new Map<string, string>();
   /** Number of status checks before a payment confirms; 0 makes tests deterministic. */
@@ -72,17 +71,10 @@ export class MockSolana implements Solana {
   readonly funds = new Map<string, { usdcAccount: boolean; usdcMicros: bigint; lamports: bigint }>();
   async walletFunds(owner: string) { return this.funds.get(owner) ?? { usdcAccount: true, usdcMicros: 1_000_000_000_000n, lamports: 1_000_000_000n }; }
 
-  async feeSplits(after: string | null) {
-    const index = after ? this.splits.findIndex(s => s.signature === after) : -1;
-    return this.splits.slice(index + 1);
-  }
-  /** Practice helper: a creator-fee transfer landing in LEV_POOL. */
-  feeSplit(micros: number) {
-    this.move(null, this.poolAddress, BigInt(micros));
-    const split = { signature: fakeSignature(), amountMicros: micros, cycle: `practice-${this.splits.length + 1}`, from: 'FEE-SOURCE', receivedAt: Date.now() };
-    this.splits.push(split);
-    return split;
-  }
+  async creatorFeesDue() { return false; }
+  async collectCreatorFees() { return null; }
+  /** Practice helper: creator fees claimed into LEV_POOL. Returns the pretend claim's signature. */
+  receiveFees(micros: number) { this.move(null, this.poolAddress, BigInt(micros)); return fakeSignature(); }
   /** Practice buyback: the USDC leaves the pool and an imaginary 1,000 coins per dollar are burned. */
   async buybackAndBurn(jobId: string, usdcMicros: number) {
     const done = this.done.get(jobId);

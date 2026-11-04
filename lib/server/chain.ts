@@ -76,8 +76,9 @@ export class Chain {
       if (a && b && (a.delegateOption !== b.delegateOption || !a.delegate.equals(b.delegate) || a.closeAuthorityOption !== b.closeAuthorityOption || !a.closeAuthority.equals(b.closeAuthority))) throw new ReviewRequired('Wallet token authority changed.');
       const mint = (a?.mint ?? b?.mint)?.toBase58(); if (mint) deltas.set(mint, (deltas.get(mint) ?? 0n) + (b?.amount ?? 0n) - (a?.amount ?? 0n));
     }
-    const solDelta = BigInt(after[0]?.lamports ?? 0) - BigInt(before[0]?.lamports ?? 0);
-    if (solDelta < -20_000_000n || BigInt(after[0]?.lamports ?? 0) < GAS_RESERVE_LAMPORTS) throw new ReviewRequired('Transaction exceeds gas allowance or wallet reserve.');
+    // Selling SOL (creator fees paid in SOL) spends it from the wallet itself.
+    const solDelta = BigInt(after[0]?.lamports ?? 0) - BigInt(before[0]?.lamports ?? 0), maxNative = policy.inputMint === NATIVE_MINT.toBase58() ? (policy.maxInput ?? 0n) : 0n;
+    if (solDelta < -(maxNative + 20_000_000n) || BigInt(after[0]?.lamports ?? 0) < GAS_RESERVE_LAMPORTS) throw new ReviewRequired('Transaction exceeds gas allowance or wallet reserve.');
     for (const [mint, delta] of deltas) if (delta < 0n && (mint !== policy.inputMint || -delta > (policy.maxInput ?? 0n))) throw new ReviewRequired('Unexpected wallet token debit.');
     if (policy.inputMint && -(deltas.get(policy.inputMint) ?? 0n) < (policy.minInput ?? 0n)) throw new ReviewRequired('Swap input does not match.');
     if (policy.outputMint && (deltas.get(policy.outputMint) ?? 0n) < (policy.minOutput ?? 0n)) throw new ReviewRequired('Swap output is below the minimum.');
@@ -148,6 +149,7 @@ export class Chain {
   async tokenDelta(signature: string, mint: string, owner = this.address): Promise<bigint> {
     const { rpc } = this.require(); const tx = await rpc.getTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: MAX_TX_VERSION });
     if (!tx || !tx.meta) throw new PendingOperation('Waiting for transaction accounting.'); if (tx.meta.err) throw new ReviewRequired('Transaction failed.');
+    if (mint === NATIVE_MINT.toBase58()) { const index = tx.transaction.message.staticAccountKeys.findIndex(k => k.toBase58() === owner); return index < 0 ? 0n : BigInt(tx.meta.postBalances[index] - tx.meta.preBalances[index]); }
     const total = (rows: any[]): bigint => rows.filter(a => a.owner === owner && a.mint === mint).reduce((s, a) => s + BigInt(a.uiTokenAmount.amount), 0n);
     return total(tx.meta.postTokenBalances ?? []) - total(tx.meta.preTokenBalances ?? []);
   }

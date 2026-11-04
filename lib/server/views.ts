@@ -24,7 +24,7 @@ export async function poolView(db: Database, pool: LevPool): Promise<PoolView> {
   const h = await pool.health();
   const counts = (await db.query<{ side: string; outcome: string; n: number }>('SELECT side, outcome, COUNT(*)::int AS n FROM settlements GROUP BY side, outcome')).rows;
   const n = (outcome: string) => counts.find(c => c.side === 'long' && c.outcome === outcome)?.n ?? 0;
-  // Publicly, only the pool's share of each creator-fee transfer.
+  // Publicly, only the pool's share of each creator-fee claim.
   const splits = (await db.query<{ signature: string; amount_micros: string; cycle: string | null; received_at: string }>('SELECT signature, COALESCE(pool_micros, amount_micros)::text AS amount_micros, cycle, received_at::text FROM fee_splits ORDER BY received_at DESC LIMIT 20')).rows;
   return {
     balanceUsd: usd(h.balanceMicros), reservedUsd: usd(h.reservedMicros), freeUsd: usd(h.freeMicros), targetUsd: usd(h.targetMicros), healthBps: h.healthBps, pauseReason: h.pauseReason,

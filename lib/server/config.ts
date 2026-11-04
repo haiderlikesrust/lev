@@ -15,10 +15,8 @@ const schema = z.object({
   OWNER_WALLET: z.string().default(''),
   /** LEV_OPS: receives pack payments, buys and opens packs on CC, holds cards for seconds, sells losers back. */
   LEV_OPS_PRIVATE_KEY: z.string().default(''),
-  /** LEV_POOL: the leverage pool's USDC. Receives sellbacks and the fee split; pays bonuses and floors. */
+  /** LEV_POOL: our coin's dev wallet. Claims its creator fees and receives sellbacks; pays bonuses and floors. */
   LEV_POOL_PRIVATE_KEY: z.string().default(''),
-  /** The wallet that claims our coin's creator fees and sends their USDC here with memo `fee-split:<cycle>`; only its transfers count as fee income. */
-  FEE_SOURCE_WALLET: z.string().default(''),
   /** Our coin's mint: shown on the site as its contract address (hidden until set), and used by /admin. */
   MEMECOIN_MINT: z.string().default(''),
   /** Our coin's ticker without the "$" (env files would read "$LONG" as a variable), e.g. LONG. Optional. */

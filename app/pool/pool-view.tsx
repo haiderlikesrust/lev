@@ -18,7 +18,7 @@ export function PoolView() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">The leverage pool</h1>
-        <p className="mt-1 max-w-2xl text-muted">Losing cards are sold back to Collector Crypt and the money lands here; winners&apos; bonuses are paid from here. It&apos;s a separate wallet from Pullback&apos;s loss coverage, so leverage can never touch that money.</p>
+        <p className="mt-1 max-w-2xl text-muted">Losing cards are sold back to Collector Crypt and the money lands here; winners&apos; bonuses are paid from here. Our coin&apos;s creator fees top it up automatically.</p>
       </div>
 
       {!pool ? <div className="h-48 animate-pulse rounded-3xl bg-mist" /> : (
@@ -46,8 +46,8 @@ export function PoolView() {
             <SettlementFeed practice={practice} cluster={cluster} />
             <div className="space-y-6">
               <Card>
-                <Label>Fee splits in</Label>
-                <p className="mt-1 text-sm text-muted">85% of our coin&apos;s creator fees, swapped from $CARDS to USDC, land in this pool.</p>
+                <Label>Creator fees in</Label>
+                <p className="mt-1 text-sm text-muted">85% of our coin&apos;s creator fees, swapped to USDC, go to this pool.</p>
                 <ul className="mt-4 space-y-2">
                   {pool.feeSplits.length ? pool.feeSplits.map(f => (
                     <li key={f.signature} className="flex items-center justify-between text-sm">
@@ -58,7 +58,7 @@ export function PoolView() {
                 </ul>
                 {practice && (
                   <div className="mt-5 border-t border-line pt-4">
-                    <div className="text-xs text-muted">Practice: simulate a creator-fee transfer</div>
+                    <div className="text-xs text-muted">Practice: simulate a creator-fee claim</div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {[1_000, 5_000, 25_000].map(a => <Button key={a} variant="ghost" disabled={busy} onClick={() => void simulate(a)}>+{usdShort(a)}</Button>)}
                     </div>

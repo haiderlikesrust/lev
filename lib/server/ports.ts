@@ -1,12 +1,12 @@
 import type { MachineConfig } from '../shared/machines';
 import type { Card, FeedPull } from './cc/client';
 import type { PaymentIntent } from './payment';
+import type { Settings } from '../shared/settings';
 
 export type PaymentState = { state: 'confirmed'; signature: string } | { state: 'pending' } | { state: 'failed'; reason: string } | { state: 'expired' };
 export type BuiltPayment = { intent: PaymentIntent; transaction: string; blockhash: string };
 export type PurchaseResult = { state: 'pending'; message: string; memo?: string; signature?: string } | { state: 'complete'; memo: string; signature: string; card: Card };
 export type SaleResult = { state: 'pending'; message: string } | { state: 'complete'; signature: string; amountMicros: number };
-export type FeeSplit = { signature: string; amountMicros: number; cycle: string | null; from: string; receivedAt: number };
 
 /** Everything the services need from Solana. `LiveSolana` and `MockSolana` implement it. */
 export interface Solana {
@@ -26,8 +26,10 @@ export interface Solana {
   transferNft(jobId: string, mint: string, to: string): Promise<string>;
   /** A buyer's USDC and SOL, checked before they are asked to sign. */
   walletFunds(owner: string): Promise<{ usdcAccount: boolean; usdcMicros: bigint; lamports: bigint }>;
-  /** Creator-fee USDC that reached LEV_POOL since the newest transfer we know. */
-  feeSplits(after: string | null): Promise<FeeSplit[]>;
+  /** True when an unfinished claim exists, or enough creator fees have built up to be worth claiming. */
+  creatorFeesDue(settings: Settings): Promise<boolean>;
+  /** Claims creator fees into LEV_POOL, swaps them to USDC and splits them. Resumable; null when there was nothing to claim. */
+  collectCreatorFees(settings: Settings): Promise<{ id: string; usdcMicros: number; signature: string } | null>;
   /** LEV_POOL swaps USDC into our coin and burns it. Idempotent per job id; throws PendingOperation until done. */
   buybackAndBurn(jobId: string, usdcMicros: number, slippageBps: number): Promise<{ tokens: bigint; swapSignature: string; burnSignature: string }>;
 }

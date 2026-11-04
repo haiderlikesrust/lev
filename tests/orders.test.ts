@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { Keypair } from '@solana/web3.js';
 import { openDatabase } from '@/lib/server/db';
 import { MockPacks, MockSolana } from '@/lib/server/mock';
-import { bootstrap, createServices, indexFeeSplits } from '@/lib/server/services';
+import { recordCreatorFees } from '@/lib/server/burns';
+import { isClaim } from '@/lib/server/fees';
+import { bootstrap, createServices } from '@/lib/server/services';
 import type { Level } from '@/lib/shared/leverage';
 
 const M = 1_000_000;
+const claimFees = (ctx: Awaited<ReturnType<typeof setup>>, usd: number, id = 'fees:1') =>
+  recordCreatorFees(ctx.s.db, ctx.s.settings.current, { id, usdcMicros: usd * M, signature: ctx.solana.receiveFees(usd * M), from: ctx.solana.poolAddress });
 
 async function setup(poolUsd = 25_000) {
   const solana = new MockSolana(BigInt(poolUsd) * BigInt(M));
@@ -105,19 +109,17 @@ describe('leverage packs (practice mode)', () => {
     expect(raised.pending?.dailyLossLimitUsd).toBe(500);
   });
 
-  it('keeps a level locked until the pool reaches its unlock size, then opens it after a fee split', async () => {
+  it('keeps a level locked until the pool reaches its unlock size, then opens it after creator fees arrive', async () => {
     const ctx = await setup(1_500);
     await expect(ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'full', true)).rejects.toThrow(/Unlocks when the pool reaches/);
-    ctx.solana.feeSplit(5_000 * M);
-    await indexFeeSplits(ctx.s);
+    await claimFees(ctx, 5_000);
     ctx.s.pool.invalidate();
     expect((await play(ctx, 'full', 26)).status).toBe('complete');
   });
 
   it('keeps 85% of creator fees as pool money and holds 15% until the owner buys back', async () => {
     const ctx = await setup(10_000);
-    ctx.solana.feeSplit(1_000 * M);
-    await indexFeeSplits(ctx.s);
+    await claimFees(ctx, 1_000);
     ctx.s.pool.invalidate();
     expect(await ctx.s.pool.held()).toBe(150 * M);
     expect(await ctx.s.pool.balance()).toBe(10_850 * M);
@@ -128,6 +130,28 @@ describe('leverage packs (practice mode)', () => {
     expect(await ctx.s.pool.held()).toBe(0);
     expect(await ctx.s.pool.balance()).toBe(10_850 * M);
     expect((await ctx.s.burns.list())[0].status).toBe('done');
+  });
+
+  it('counts a claim once, even when a crash makes it record twice', async () => {
+    const ctx = await setup(10_000);
+    await claimFees(ctx, 1_000, 'fees:same');
+    await claimFees(ctx, 1_000, 'fees:same');
+    expect(await ctx.s.pool.held()).toBe(150 * M);
+  });
+
+  it('tells a creator-fee claim from a sale or a plain transfer', () => {
+    const pump = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+    expect(isClaim(['wallet', pump], 500n, 0n)).toBe(true);
+    expect(isClaim(['wallet', pump], 500n, -1_000n)).toBe(false);
+    expect(isClaim(['wallet', 'someone-else'], 500n, 0n)).toBe(false);
+    expect(isClaim(['wallet', pump], -500n, 0n)).toBe(false);
+  });
+
+  it('collects fees only when they are due, and never while paused', async () => {
+    const ctx = await setup(10_000);
+    expect(await ctx.s.burns.feesDue()).toBe(false);
+    await ctx.s.burns.collectFees();
+    expect(await ctx.s.pool.held()).toBe(0);
   });
 
   it('pauses new packs below the safety line', async () => {

@@ -1,6 +1,6 @@
 # long.cards
 
-An optional, **high-risk** leverage add-on to Collector Crypt (CC) packs, next to Pullback (loss coverage).
+An optional, **high-risk** leverage add-on to Collector Crypt (CC) packs.
 The name lives in one place: `lib/shared/brand.ts`. The logo master is `public/brand/long-logo.png`; the wordmark, favicon and link preview are cut from it (`public/brand/long-wordmark.png`, `app/icon.png`, `app/apple-icon.png`, `app/opengraph-image.png`).
 
 **What happens to a pack:**
@@ -39,7 +39,7 @@ Open http://localhost:3000.
 - **Database:** embedded Postgres (PGlite) in `.data/`.
 - **Wallet:** pick **Burner Wallet** in the wallet list. It is a fresh throwaway wallet on every page load.
 
-On the Pool page, "simulate a fee split" adds play money to the pool, so you can watch levels unlock.
+On the Pool page, the practice buttons simulate creator-fee claims to the pool, so you can watch levels unlock.
 
 **If pages keep reloading on their own,** a production build in `.next` is confusing the dev server. Stop `npm run dev`, delete `.next`, and start it again. Don't run `npm run build` while dev is running.
 
@@ -47,7 +47,7 @@ On the Pool page, "simulate a fee split" adds play money to the pool, so you can
 - `npm test`: 35 tests covering the math, the payout identity, every settlement path (packs and shorts), refunds, cool-down, loss limits, unlocks and pause.
 - `npm run calibrate`: read-only; prints fair multipliers from CC's live pull history (`--sample` uses the saved sample, `--pool 50000` sets the pool size).
 - `npm run snapshot`: refreshes the practice sample from CC.
-- `npm run check`: read-only launch checks (CC endpoints, wallets, fee-split source).
+- `npm run check`: read-only launch checks (CC endpoints, wallets, coin settings).
 
 ## What Collector Crypt provides (all documented at docs.collectorcrypt.com)
 
@@ -98,7 +98,7 @@ The same pulls price shorts (`lib/shared/short.ts`): the pool's EV per short is 
 
 ## Pool safety and responsible play
 
-- **Separate wallet:** `LEV_POOL`, so leverage can never touch Pullback's loss-coverage money.
+- **Own wallet:** `LEV_POOL`, our coin's dev wallet. Nothing is shared with Pullback.
 - **Bonus cap:** 10% of the free pool per pack, locked at quote. Every pack in progress reserves its cap.
 - **Auto-pause:**
   - globally, below the safety line ($1,000 free by default);
@@ -128,6 +128,7 @@ git diff design-v1 -- app components
 | `lib/server/cc/*` | CC client, purchase flow and pack-payment validator (ported from Pullback), plus the new sellback flow |
 | `lib/server/chain.ts`, `payment.ts` | Persist-then-broadcast transactions and payment validation (ported from Pullback) |
 | `lib/server/collector.ts`, `calibration.ts` | CC pull feed into the database; daily recalibration |
+| `lib/server/fees.ts`, `burns.ts` | Claims creator fees, swaps them to USDC and splits them; the owner's buyback |
 | `lib/server/services.ts` | Wiring, plus the background worker |
 | `app/` | Pages (Home, Open, Pool, History, Admin) and `app/api/*` routes |
 
@@ -140,7 +141,7 @@ Production runs on Dokploy as an Application (this repository's `Dockerfile`) pl
 ## Before mainnet
 
 1. **Fill in `.env.local`** from `.env.example`, then run `npm run check` until it is all green.
-2. **Creator fees.** Whatever claims the coin's creator fees and swaps $CARDS to USDC sends the USDC to `LEV_POOL` from `FEE_SOURCE_WALLET` with memo `fee-split:<cycleId>`. This app indexes those transfers; the pool's share (85% by default) is set in `/admin`.
+2. **Creator fees.** `LEV_POOL` must be our coin's dev wallet (or a fee-sharing shareholder) with `MEMECOIN_MINT` and `JUPITER_API_KEY` set. Every 2 minutes the worker claims once `$2` or more has built up (set in `/admin`), and it also picks up claims made by hand on pump.fun. Each claim's `$CARDS` is sold for USDC and split: 85% is pool money and 15% is held, also set in `/admin`.
 3. **Run on devnet first** against `https://dev-gacha.collectorcrypt.com`, through every settlement path. In particular, confirm the shape of CC's buyback transaction (`lib/server/cc/sellback.ts`).
 4. **Mainnet smoke test:** a tiny pool and one $25 Half-risk pack. Reconcile the ledger against the chain.
 
@@ -148,5 +149,4 @@ Production runs on Dokploy as an Application (this repository's `Dockerfile`) pl
 - A CC API key and CC's OK to buy packs for users.
 - pNFT/legacy card transfers (CC cards are Core today).
 - The launch numbers (edge, cap, pause line, target, cool-down).
-- The leverage-pool target for the fee split.
 - Legal review (age/geo gating).

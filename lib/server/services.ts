@@ -1,6 +1,6 @@
 import { PublicKey } from '@solana/web3.js';
 import { config } from './config';
-import { atomic, audit, migrate, openDatabase, record, Serial, type Database } from './db';
+import { audit, migrate, openDatabase, Serial, type Database } from './db';
 import { Burns } from './burns';
 import { Jobs } from './jobs';
 import { Chain, connection } from './chain';
@@ -60,23 +60,6 @@ export async function bootstrap(s: Services) {
   else await s.collector.poll().catch(() => 0);
   const rows = await loadCalibration(s.db);
   if (!rows.length || !(await loadShortCalibration(s.db)).length || Date.now() - Math.min(...rows.map(r => r.computedAt)) > 24 * 3_600_000) await runCalibration(s.db, s.collector, s.settings.current);
-}
-
-/**
- * Indexes creator-fee USDC arriving in LEV_POOL and splits it on arrival: `feePoolShareBps` becomes pool
- * money, the rest is held (still in LEV_POOL) for the owner's manual buyback and never funds bonuses.
- */
-export async function indexFeeSplits(s: Services) {
-  const last = (await s.db.query<{ signature: string }>('SELECT signature FROM fee_splits ORDER BY received_at DESC LIMIT 1')).rows[0]?.signature ?? null;
-  for (const split of await s.solana.feeSplits(last)) {
-    const poolMicros = Math.floor(split.amountMicros * s.settings.current.feePoolShareBps / 10_000), heldMicros = split.amountMicros - poolMicros;
-    await atomic(s.db, async () => {
-      await s.db.query('INSERT INTO fee_splits(signature,amount_micros,pool_micros,cycle,from_wallet,received_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(signature) DO NOTHING', [split.signature, split.amountMicros, poolMicros, split.cycle, split.from, split.receivedAt]);
-      await record(s.db, { id: `fee-split:${split.signature}`, bucket: 'pool', kind: 'fee-split', micros: poolMicros, signature: split.signature, ref: split.cycle });
-      if (heldMicros > 0) await record(s.db, { id: `fee-held:${split.signature}`, bucket: 'burn', kind: 'fee-held', micros: heldMicros, signature: split.signature, ref: split.cycle });
-    });
-    s.pool.invalidate();
-  }
 }
 
 /**
@@ -176,7 +159,7 @@ export function stopOnSignals() {
 }
 
 /**
- * The background worker: advances packs, collects CC pulls, recalibrates daily and indexes fee splits.
+ * The background worker: advances packs, collects CC pulls, recalibrates daily and claims our coin's creator fees.
  * It runs inside the server process (like Pullback's coordinator), so there is exactly one owner of the
  * database and of every money-moving step. Each loop skips a tick while its previous run is still going.
  * It starts when the coordinator becomes active.
@@ -206,6 +189,6 @@ function startWorker(c: Coordinator, s: Services) {
     const rows = await loadCalibration(s.db);
     if (!rows.length || Date.now() - Math.min(...rows.map(r => r.computedAt)) > 24 * 3_600_000) await runCalibration(s.db, s.collector, s.settings.current);
   });
-  if (config.live) loop('fee-splits', 300_000, () => indexFeeSplits(s));
+  if (config.live) loop('creator-fees', 120_000, async () => { if (await s.burns.feesDue()) await s.serial.run(() => s.burns.collectFees()); });
   console.log(`[worker] started (${config.live ? 'mainnet' : 'practice mode'})`);
 }

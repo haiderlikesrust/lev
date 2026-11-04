@@ -13,11 +13,14 @@ async function jsonFetch(url: string, init: RequestInit = {}) {
   return body;
 }
 
+/** A quote that would move the price more than the caller allows; nothing was signed. */
+export class PriceImpactTooHigh extends Error {}
+
 export function quote(inputMint: string, outputMint: string, amount: bigint, taker?: string, slippageBps = 100) {
   return jsonFetch(`${JUP}/order?${new URLSearchParams({ inputMint, outputMint, amount: amount.toString(), slippageBps: String(slippageBps), excludeRouters: 'jupiterz,dflow,okx', ...(taker ? { taker } : {}) })}`, { headers: { 'x-api-key': config.JUPITER_API_KEY } });
 }
 
-export async function swap(chain: Chain, id: string, inputMint: string, outputMint: string, amount: bigint, slippageBps: number, minOutput = 1n) {
+export async function swap(chain: Chain, id: string, inputMint: string, outputMint: string, amount: bigint, slippageBps: number, minOutput = 1n, maxImpactBps?: number) {
   if (amount <= 0n) throw new Error('Swap amount must be positive.');
   if (!config.JUPITER_API_KEY) throw new ReviewRequired('Set JUPITER_API_KEY (portal.jup.ag) before swapping.');
   let job = await chain.jobs.get(id);
@@ -28,6 +31,9 @@ export async function swap(chain: Chain, id: string, inputMint: string, outputMi
   const signature = await chain.execute(id, 'swap', async () => {
     const requestedAt = Date.now(), order = await quote(inputMint, outputMint, amount, chain.address!, slippageBps);
     if (Date.now() - requestedAt > 10_000) throw new Error('Swap quote is stale. Retry with current pricing.');
+    // Jupiter reports impact as a negative fraction: -0.0068 is 0.68%.
+    const impactBps = Math.abs(Number(order.priceImpactPct ?? 0)) * 10_000;
+    if (maxImpactBps !== undefined && impactBps > maxImpactBps) throw new PriceImpactTooHigh(`Price impact ${(impactBps / 100).toFixed(2)}% is above the ${(maxImpactBps / 100).toFixed(2)}% limit.`);
     if (order.errorCode || !order.transaction) throw new Error(order.errorMessage || 'No supported swap route.');
     if (order.router !== 'metis' || order.inputMint !== inputMint || order.outputMint !== outputMint || BigInt(order.inAmount) !== amount) throw new ReviewRequired('Swap quote route, asset or amount mismatch.');
     const guaranteed = BigInt(order.outAmount) * (10_000n - BigInt(slippageBps)) / 10_000n;

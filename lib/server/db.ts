@@ -114,9 +114,9 @@ export async function migrate(db: Database) {
     `CREATE TABLE IF NOT EXISTS calibration (code TEXT NOT NULL, level TEXT NOT NULL, data JSONB NOT NULL, computed_at BIGINT NOT NULL, PRIMARY KEY(code, level))`,
     // Responsible play: a player's own daily loss limit. Raising it waits 24h; lowering is immediate.
     `CREATE TABLE IF NOT EXISTS player_limits (wallet TEXT PRIMARY KEY, daily_loss_limit_micros BIGINT, pending_limit_micros BIGINT, pending_at BIGINT, opted_in_at BIGINT)`,
-    // USDC that reached LEV_POOL from Pullback's fee split (memo `fee-split:<cycle>`).
+    // One row per creator-fee claim (`recordCreatorFees`).
     `CREATE TABLE IF NOT EXISTS fee_splits (signature TEXT PRIMARY KEY, amount_micros BIGINT NOT NULL, cycle TEXT, from_wallet TEXT NOT NULL, received_at BIGINT NOT NULL)`,
-    // The part of each creator-fee transfer that is pool money (the rest is held for the owner's buyback).
+    // The part of each claim that is pool money (the rest is held for the owner's buyback).
     `ALTER TABLE fee_splits ADD COLUMN IF NOT EXISTS pool_micros BIGINT`,
     // Owner-started buybacks of our coin from the held share, advanced by the worker until burned.
     // Shorts share the order pipeline: no pack is bought; the order rides the next CC pull on its machine.

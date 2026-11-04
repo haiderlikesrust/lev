@@ -4,17 +4,44 @@ import { PendingOperation, ReviewRequired } from './jobs';
 import { httpError, redact } from './redact';
 import type { Solana } from './ports';
 import type { SettingsStore } from './settings';
+import type { Settings } from '../shared/settings';
 import type { LevPool } from './pool';
 
 export type BurnView = { id: string; status: 'pending' | 'done' | 'review'; usdcUsd: number; tokens: string | null; swapSignature: string | null; burnSignature: string | null; createdAt: number; error: string | null };
 
 /**
- * Owner-only. The held share of creator fees (see `indexFeeSplits`) is spent only when the owner clicks
+ * Splits one creator-fee claim: `feePoolShareBps` becomes pool money, the rest is held (still in LEV_POOL) for
+ * the owner's manual buyback and never funds bonuses. Idempotent per claim, so a resumed claim can't count twice.
+ */
+export async function recordCreatorFees(db: Database, settings: Settings, claim: { id: string; usdcMicros: number; signature: string; from: string }) {
+  const poolMicros = Math.floor(claim.usdcMicros * settings.feePoolShareBps / 10_000), heldMicros = claim.usdcMicros - poolMicros;
+  await atomic(db, async () => {
+    await db.query('INSERT INTO fee_splits(signature,amount_micros,pool_micros,cycle,from_wallet,received_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(signature) DO NOTHING', [claim.signature, claim.usdcMicros, poolMicros, claim.id, claim.from, Date.now()]);
+    await record(db, { id: `fee-split:${claim.id}`, bucket: 'pool', kind: 'fee-split', micros: poolMicros, signature: claim.signature, ref: claim.id });
+    if (heldMicros > 0) await record(db, { id: `fee-held:${claim.id}`, bucket: 'burn', kind: 'fee-held', micros: heldMicros, signature: claim.signature, ref: claim.id });
+  });
+}
+
+/**
+ * Owner-only. The held share of creator fees (see `recordCreatorFees`) is spent only when the owner clicks
  * "Buy back & burn": LEV_POOL swaps that USDC into our coin on Jupiter and burns it. One at a time,
  * advanced by the worker like an order, so a crash mid-way resumes instead of paying twice.
  */
 export class Burns {
   constructor(readonly db: Database, readonly solana: Solana, readonly settings: SettingsStore, readonly pool: LevPool) {}
+
+  /** True when fees are worth claiming or a claim is waiting to be sold. Mostly chain reads, so it runs outside the coordinator's queue. */
+  async feesDue() {
+    if (this.settings.current.paused) return false;
+    try { return await this.solana.creatorFeesDue(this.settings.current); }
+    catch (error) { if (error instanceof PendingOperation) return false; throw error; }
+  }
+
+  /** Claims, swaps and splits creator fees. Call from the coordinator's Serial queue; a part-finished claim resumes next time. */
+  async collectFees() {
+    try { if (await this.solana.collectCreatorFees(this.settings.current)) this.pool.invalidate(); }
+    catch (error) { if (!(error instanceof PendingOperation)) throw error; }
+  }
 
   async start(by: string) {
     if ((await this.db.query("SELECT 1 FROM burns WHERE status='pending'")).rows.length) throw httpError(409, 'A buyback is already running.');
