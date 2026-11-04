@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { PublicKey, ComputeBudgetProgram } from '@solana/web3.js';
 import { NATIVE_MINT, createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync } from '@solana/spl-token';
-import { MAX_TX_VERSION, type Chain } from './chain';
+import type { Chain } from './chain';
 import { config } from './config';
 import { PendingOperation } from './jobs';
 import { PriceImpactTooHigh, quote, swap } from './swap';
@@ -17,39 +17,11 @@ type Claimable = { quoteMint: string; amount: bigint; creator: string; sharing: 
 
 const unfinishedCycle = async (pool: Chain) => (await pool.jobs.db.query("SELECT * FROM jobs WHERE kind='fee-cycle' AND status<>'complete' ORDER BY created_at LIMIT 1")).rows[0];
 
-const PUMP_PROGRAMS = new Set(['6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P', 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA', 'pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ']);
-const SCAN_JOB = 'fee-scan';
+/** Any of the fee token in this wallet counts as fees, however it got here (a claim by hand, a transfer). SOL pays network fees and USDC is the pool itself, so they never do. */
+const walletFees = async (pool: Chain, mint: string) => mint === NATIVE_MINT.toBase58() || mint === config.USDC_MINT ? 0n : pool.balance(mint);
 
-/** A creator-fee claim: the fee token came in through a pump.fun program and none of our coin moved, which a sale would. */
-export const isClaim = (accounts: string[], feeTokenDelta: bigint, coinDelta: bigint) => feeTokenDelta > 0n && coinDelta === 0n && accounts.some(a => PUMP_PROGRAMS.has(a));
-
-/**
- * Finds claims made outside this app (by hand on pump.fun) and queues each as a fee cycle, which then sells and
- * splits it like our own. Only the claimed amount is touched: other tokens held in this wallet are never sold.
- * The first run starts from now, so earlier history is left alone.
- */
-async function findManualClaims(pool: Chain) {
-  const { rpc, signer } = pool.require(), { OnlinePumpSdk, normalizeQuoteMint } = pump();
-  const sdk = new OnlinePumpSdk(rpc), curve = await sdk.fetchBondingCurve(new PublicKey(config.MEMECOIN_MINT)), quoteMint = normalizeQuoteMint(curve.quoteMint);
-  const watched = quoteMint.equals(NATIVE_MINT) ? signer.publicKey : getAssociatedTokenAddressSync(quoteMint, signer.publicKey, false, await sdk.fetchQuoteTokenProgram(quoteMint));
-  const scan = await pool.jobs.get(SCAN_JOB), last: string | null = scan?.data.last ?? null;
-  const signatures = await rpc.getSignaturesForAddress(watched, { limit: 1_000, ...(last ? { until: last } : {}) }, 'confirmed');
-  if (scan) for (const { signature } of signatures.filter(s => !s.err).reverse()) {
-    if (await pool.jobs.get(`fees:${signature}`)) continue;
-    // Our own claims are saved before they are sent.
-    if ((await pool.jobs.db.query("SELECT 1 FROM jobs WHERE kind='fee-claim' AND data->>'signature'=$1", [signature])).rows.length) continue;
-    const tx = await rpc.getParsedTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: MAX_TX_VERSION });
-    if (!tx) throw new PendingOperation('Waiting for transaction history.');
-    const accounts = tx.transaction.message.accountKeys.map(k => k.pubkey.toBase58());
-    if (!accounts.some(a => PUMP_PROGRAMS.has(a))) continue;
-    const amount = await pool.tokenDelta(signature, quoteMint.toBase58());
-    if (isClaim(accounts, amount, await pool.tokenDelta(signature, config.MEMECOIN_MINT))) await pool.jobs.put(`fees:${signature}`, 'fee-cycle', 'routing', { quoteMint: quoteMint.toBase58(), claimSignature: signature, amount: amount.toString(), manual: true });
-  }
-  await pool.jobs.put(SCAN_JOB, SCAN_JOB, 'ok', { last: signatures[0]?.signature ?? last });
-}
-
-/** What LEV_POOL could claim right now, or null. Read-only, so it is safe to call every few seconds. */
-async function claimable(pool: Chain): Promise<Claimable | null> {
+/** What LEV_POOL could claim right now. Read-only, so it is safe to call every few seconds. */
+async function claimable(pool: Chain): Promise<Claimable> {
   const { rpc, signer } = pool.require(), { OnlinePumpSdk, PUMP_SDK, feeSharingConfigPda, normalizeQuoteMint } = pump();
   const mint = new PublicKey(config.MEMECOIN_MINT), sdk = new OnlinePumpSdk(rpc), curve = await sdk.fetchBondingCurve(mint);
   if (curve.isHolderReward) throw new Error('This mint routes fees to holder rewards, not its creator.');
@@ -61,8 +33,7 @@ async function claimable(pool: Chain): Promise<Claimable | null> {
     if (!shared.shareholders.some(s => s.address.equals(signer.publicKey))) throw new Error('LEV_POOL is not a fee-sharing shareholder of this coin.');
   }
   const balances = await sdk.getCreatorVaultQuoteBalances(curve.creator), balance = balances.find(b => b.mint.equals(quoteMint));
-  if (!balance || balance.total.isZero()) return null;
-  return { quoteMint: quoteMint.toBase58(), amount: BigInt(balance.total.toString()), creator: curve.creator.toBase58(), sharing, graduated: curve.complete };
+  return { quoteMint: quoteMint.toBase58(), amount: BigInt(balance?.total.toString() ?? 0), creator: curve.creator.toBase58(), sharing, graduated: curve.complete };
 }
 
 /** USDC per smallest unit of the fee mint, from a Jupiter quote. Reused for 30 seconds: the due check runs every second. */
@@ -78,34 +49,33 @@ export async function usdcValue(mint: string, amount: bigint, now = Date.now(), 
   return Math.floor(Number(amount) * unitPrice.usdcPerUnit);
 }
 
-/** True when a claim cycle is unfinished (a claim made by hand starts one), or enough fees have built up to be worth claiming (`creatorFeeMinUsd`). */
+/** True when a cycle is unfinished, or fees to claim plus fees already in the wallet are worth a cycle (`creatorFeeMinUsd`). */
 export async function creatorFeesDue(pool: Chain, settings: Settings) {
-  await findManualClaims(pool);
   if (await unfinishedCycle(pool)) return true;
-  const c = await claimable(pool);
-  if (!c) return false;
+  const c = await claimable(pool), total = c.amount + await walletFees(pool, c.quoteMint);
+  if (total === 0n) return false;
   if (settings.creatorFeeMinUsd <= 0) return true;
-  return await usdcValue(c.quoteMint, c.amount) >= settings.creatorFeeMinUsd * 1_000_000;
+  return await usdcValue(c.quoteMint, total) >= settings.creatorFeeMinUsd * 1_000_000;
 }
 
 /**
- * Claims our coin's pump.fun creator fees into LEV_POOL, converts them to USDC and splits them (`recordCreatorFees`).
- * Every step is part of one job, so a crash resumes the same claim.
+ * Claims our coin's pump.fun creator fees into LEV_POOL, then converts all of the fee token in the wallet to USDC and
+ * splits it (`recordCreatorFees`). Every step is part of one job, so a crash resumes the same cycle.
  * The sale is split into parts when one swap would move the price more than `maxPriceImpactBps`.
- * Returns null when there is nothing to claim.
+ * Returns null when there is nothing to claim or sell.
  */
 export async function collectCreatorFees(pool: Chain, settings: Settings) {
   const { rpc, signer } = pool.require(), { OnlinePumpSdk, PUMP_SDK } = pump();
   let cycle = await unfinishedCycle(pool);
   if (!cycle) {
     const c = await claimable(pool);
-    if (!c) return null;
+    if (c.amount === 0n && await walletFees(pool, c.quoteMint) === 0n) return null;
     const id = `fees:${randomUUID()}`;
-    await pool.jobs.put(id, 'fee-cycle', 'claiming', { quoteMint: c.quoteMint, creator: c.creator, sharing: c.sharing, graduated: c.graduated });
+    await pool.jobs.put(id, 'fee-cycle', 'claiming', { quoteMint: c.quoteMint, creator: c.creator, sharing: c.sharing, graduated: c.graduated, claim: c.amount > 0n });
     cycle = await pool.jobs.get(id);
   }
   const d = cycle.data, quoteMint = new PublicKey(d.quoteMint), mint = new PublicKey(config.MEMECOIN_MINT), sdk = new OnlinePumpSdk(rpc);
-  if (!d.claimSignature) {
+  if (d.claim && !d.claimSignature) {
     d.claimSignature = await pool.execute(`${cycle.id}:claim`, 'fee-claim', async () => {
       const quoteTokenProgram = await sdk.fetchQuoteTokenProgram(quoteMint);
       const ixs = [ComputeBudgetProgram.setComputeUnitLimit({ units: 350_000 })];
@@ -122,7 +92,11 @@ export async function collectCreatorFees(pool: Chain, settings: Settings) {
     });
     await pool.jobs.put(cycle.id, 'fee-cycle', 'routing', d);
   }
-  if (!d.amount) { const delta = await pool.tokenDelta(d.claimSignature, d.quoteMint); d.amount = (delta > 0n ? delta : 0n).toString(); await pool.jobs.put(cycle.id, 'fee-cycle', 'routing', d); }
+  if (!d.amount) {
+    // The wallet's whole balance is sold, not only this claim; the claim's own amount covers an RPC that hasn't caught up.
+    const inWallet = await walletFees(pool, d.quoteMint), claimed = d.claimSignature ? await pool.tokenDelta(d.claimSignature, d.quoteMint) : 0n, amount = inWallet > claimed ? inWallet : claimed;
+    d.amount = (amount > 0n ? amount : 0n).toString(); await pool.jobs.put(cycle.id, 'fee-cycle', 'routing', d);
+  }
   if (BigInt(d.amount) === 0n) { await pool.jobs.put(cycle.id, 'fee-cycle', 'complete', d); return null; }
   // Bonuses are owed in dollars, so the pool keeps USDC rather than a volatile token.
   if (!d.usdcAmount) {
@@ -149,7 +123,7 @@ export async function collectCreatorFees(pool: Chain, settings: Settings) {
     }
     await pool.jobs.put(cycle.id, 'fee-cycle', 'accounting', d);
   }
-  await recordCreatorFees(pool.jobs.db, settings, { id: cycle.id, usdcMicros: Number(d.usdcAmount), signature: d.claimSignature, from: pool.address! });
+  await recordCreatorFees(pool.jobs.db, settings, { id: cycle.id, usdcMicros: Number(d.usdcAmount), signature: d.claimSignature ?? d.parts[0].signature, from: pool.address! });
   await pool.jobs.put(cycle.id, 'fee-cycle', 'complete', d);
-  return { id: cycle.id as string, usdcMicros: Number(d.usdcAmount), signature: d.claimSignature as string };
+  return { id: cycle.id as string, usdcMicros: Number(d.usdcAmount), signature: (d.claimSignature ?? d.parts[0].signature) as string };
 }

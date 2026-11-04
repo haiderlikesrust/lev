@@ -26,9 +26,9 @@ export interface Solana {
   transferNft(jobId: string, mint: string, to: string): Promise<string>;
   /** A buyer's USDC and SOL, checked before they are asked to sign. */
   walletFunds(owner: string): Promise<{ usdcAccount: boolean; usdcMicros: bigint; lamports: bigint }>;
-  /** True when an unfinished claim exists, or enough creator fees have built up to be worth claiming. */
+  /** True when a fee cycle is unfinished, or fees to claim plus fee tokens in the wallet are worth a cycle. */
   creatorFeesDue(settings: Settings): Promise<boolean>;
-  /** Claims creator fees into LEV_POOL, swaps them to USDC and splits them. Resumable; null when there was nothing to claim. */
+  /** Claims creator fees into LEV_POOL, swaps all the fee tokens there to USDC and splits it. Resumable; null when there was nothing to do. */
   collectCreatorFees(settings: Settings): Promise<{ id: string; usdcMicros: number; signature: string } | null>;
   /** LEV_POOL swaps USDC into our coin and burns it. Idempotent per job id; throws PendingOperation until done. */
   buybackAndBurn(jobId: string, usdcMicros: number, slippageBps: number): Promise<{ tokens: bigint; swapSignature: string; burnSignature: string }>;

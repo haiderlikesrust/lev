@@ -141,7 +141,7 @@ Production runs on Dokploy as an Application (this repository's `Dockerfile`) pl
 ## Before mainnet
 
 1. **Fill in `.env.local`** from `.env.example`, then run `npm run check` until it is all green.
-2. **Creator fees.** `LEV_POOL` must be our coin's dev wallet (or a fee-sharing shareholder) with `MEMECOIN_MINT` and `JUPITER_API_KEY` set. Every 2 minutes the worker claims once `$2` or more has built up (set in `/admin`), and it also picks up claims made by hand on pump.fun. Each claim's `$CARDS` is sold for USDC and split: 85% is pool money and 15% is held, also set in `/admin`.
+2. **Creator fees.** `LEV_POOL` must be our coin's dev wallet (or a fee-sharing shareholder) with `MEMECOIN_MINT` and `JUPITER_API_KEY` set. Every 2 minutes the worker claims what has built up. All `$CARDS` in the wallet counts as fees, however it got there, and is sold for USDC once it's worth `$2` (set in `/admin`). Each sale is split: 85% is pool money and 15% is held, also set in `/admin`.
 3. **Run on devnet first** against `https://dev-gacha.collectorcrypt.com`, through every settlement path. In particular, confirm the shape of CC's buyback transaction (`lib/server/cc/sellback.ts`).
 4. **Mainnet smoke test:** a tiny pool and one $25 Half-risk pack. Reconcile the ledger against the chain.
 

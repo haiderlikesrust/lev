@@ -30,7 +30,7 @@ const FIELDS: { key: keyof Settings; label: string; hint: string }[] = [
   { key: 'shortWaitMinutes', label: 'Short max wait (minutes)', hint: 'refunded in full if no pull comes' },
   { key: 'feePoolShareBps', label: 'Creator fees to pool (bps)', hint: '8500 = 85%; the rest is held for your buyback' },
   { key: 'buybackSlippageBps', label: 'Swap slippage (bps)', hint: '100 = 1%; fee sales and the buyback' },
-  { key: 'creatorFeeMinUsd', label: 'Claim fees from ($)', hint: 'claim once this much has built up' },
+  { key: 'creatorFeeMinUsd', label: 'Claim and sell fees from ($)', hint: 'once this much is waiting, in the wallet or to claim' },
   { key: 'maxPriceImpactBps', label: 'Fee sale price impact (bps)', hint: 'larger sales split into parts' },
 ];
 

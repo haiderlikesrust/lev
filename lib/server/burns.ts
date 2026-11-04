@@ -30,7 +30,7 @@ export async function recordCreatorFees(db: Database, settings: Settings, claim:
 export class Burns {
   constructor(readonly db: Database, readonly solana: Solana, readonly settings: SettingsStore, readonly pool: LevPool) {}
 
-  /** True when fees are worth claiming or a claim is waiting to be sold. Mostly chain reads, so it runs outside the coordinator's queue. */
+  /** True when fees are worth claiming or selling. Read-only, so it runs outside the coordinator's queue. */
   async feesDue() {
     if (this.settings.current.paused) return false;
     try { return await this.solana.creatorFeesDue(this.settings.current); }

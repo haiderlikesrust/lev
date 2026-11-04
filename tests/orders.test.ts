@@ -3,7 +3,6 @@ import { Keypair } from '@solana/web3.js';
 import { openDatabase } from '@/lib/server/db';
 import { MockPacks, MockSolana } from '@/lib/server/mock';
 import { recordCreatorFees } from '@/lib/server/burns';
-import { isClaim } from '@/lib/server/fees';
 import { bootstrap, createServices } from '@/lib/server/services';
 import type { Level } from '@/lib/shared/leverage';
 
@@ -137,14 +136,6 @@ describe('leverage packs (practice mode)', () => {
     await claimFees(ctx, 1_000, 'fees:same');
     await claimFees(ctx, 1_000, 'fees:same');
     expect(await ctx.s.pool.held()).toBe(150 * M);
-  });
-
-  it('tells a creator-fee claim from a sale or a plain transfer', () => {
-    const pump = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
-    expect(isClaim(['wallet', pump], 500n, 0n)).toBe(true);
-    expect(isClaim(['wallet', pump], 500n, -1_000n)).toBe(false);
-    expect(isClaim(['wallet', 'someone-else'], 500n, 0n)).toBe(false);
-    expect(isClaim(['wallet', pump], -500n, 0n)).toBe(false);
   });
 
   it('collects fees only when they are due, and never while paused', async () => {
