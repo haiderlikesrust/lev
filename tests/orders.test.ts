@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { Keypair } from '@solana/web3.js';
+import { Keypair, MessageV0, SystemProgram, Transaction, VersionedTransaction } from '@solana/web3.js';
+import { signableVersion } from '@/lib/server/chain';
 import { openDatabase } from '@/lib/server/db';
 import { MockPacks, MockSolana } from '@/lib/server/mock';
 import { recordCreatorFees } from '@/lib/server/burns';
 import { lockLabel } from '@/lib/client/api';
 import { insuredUsd, parsePull } from '@/lib/server/cc/client';
+import { paymentFailure } from '@/lib/server/live';
 import { bootstrap, createServices } from '@/lib/server/services';
 import { machinesView } from '@/lib/server/views';
 import type { Level } from '@/lib/shared/leverage';
@@ -192,6 +194,24 @@ describe('leverage packs (practice mode)', () => {
     expect((await ctx.s.orders.get(order.id)).outcome).toBe('loss');
     ctx.s.pool.invalidate();
     expect((await ctx.s.orders.create(other, 'pokemon_25', 'half', true)).order.capUsd).toBe(25);
+  });
+
+  it('asks for no payment until the pack wallet has a USDC account, and never blames the buyer for it', async () => {
+    const ctx = await setup();
+    ctx.solana.funds.set(ctx.solana.opsAddress, { usdcAccount: false, usdcMicros: 0n, lamports: 1_000_000_000n });
+    await expect(ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'half', true)).rejects.toThrow(/getting ready to take payments/);
+    const missing = 'Transaction simulation failed: Error processing Instruction 2: invalid account data for instruction';
+    expect(paymentFailure(missing)).not.toMatch(/This wallet/);
+    expect(paymentFailure('custom program error: 0x1')).toMatch(/not have enough USDC/);
+  });
+
+  it('signs Collector Crypt transactions in both formats it sends: legacy sales and v0 packs', () => {
+    const payer = Keypair.generate().publicKey, ix = SystemProgram.transfer({ fromPubkey: payer, toPubkey: payer, lamports: 1 }), recentBlockhash = '11111111111111111111111111111111';
+    const legacy = new Transaction({ feePayer: payer, recentBlockhash }).add(ix).serialize({ requireAllSignatures: false, verifySignatures: false });
+    const v0 = new VersionedTransaction(MessageV0.compile({ payerKey: payer, instructions: [ix], recentBlockhash })).serialize();
+    expect(VersionedTransaction.deserialize(legacy).version).toBe('legacy');
+    expect(signableVersion(VersionedTransaction.deserialize(legacy))).toBe(true);
+    expect(signableVersion(VersionedTransaction.deserialize(v0))).toBe(true);
   });
 
   it('has no pool safety line by default, but a level still waits for its unlock size', async () => {

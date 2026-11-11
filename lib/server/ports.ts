@@ -26,6 +26,8 @@ export interface Solana {
   transferNft(jobId: string, mint: string, to: string): Promise<string>;
   /** A buyer's USDC and SOL, checked before they are asked to sign. */
   walletFunds(owner: string): Promise<{ usdcAccount: boolean; usdcMicros: bigint; lamports: bigint }>;
+  /** Creates LEV_OPS's and LEV_POOL's own USDC accounts if missing, from each wallet's SOL. True once both exist. */
+  ensureUsdcAccounts(): Promise<boolean>;
   /** True when a fee cycle is unfinished, or fees to claim plus fee tokens in the wallet are worth a cycle. */
   creatorFeesDue(settings: Settings): Promise<boolean>;
   /** Claims creator fees into LEV_POOL, swaps all the fee tokens there to USDC and splits it. Resumable; null when there was nothing to do. */

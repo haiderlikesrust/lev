@@ -135,7 +135,9 @@ export class Orders {
     if (!(await this.packs.openMachines()).has(code)) throw httpError(409, 'Collector Crypt is not selling from this machine right now. Nothing was charged.');
     const price = config.priceUsd * 1_000_000;
     await this.limits.check(wallet, price, first.maxLossMicros);
-    const funds = await this.solana.walletFunds(wallet);
+    const [funds, ops] = await Promise.all([this.solana.walletFunds(wallet), this.solana.opsAddress ? this.solana.walletFunds(this.solana.opsAddress) : null]);
+    // Every payment lands in LEV_OPS's USDC account: until the worker has created it, a payment could only fail.
+    if (!ops?.usdcAccount) throw httpError(503, 'Packs are getting ready to take payments. Please try again in a minute. Nothing was charged.');
     if (!funds.usdcAccount || funds.usdcMicros < BigInt(price)) throw httpError(400, `This ${side === 'short' ? 'short' : 'pack'} costs ${dollars(price)} in USDC and this wallet has ${dollars(Number(funds.usdcMicros))}. Add USDC and try again.`);
     if (funds.lamports < BUYER_MIN_LAMPORTS) throw httpError(400, 'This wallet needs a little SOL (0.002 is plenty) to pay the Solana network fee.');
     const id = randomUUID(), payment = await this.solana.buildUserPayment(wallet, price, `lev-${id}`);

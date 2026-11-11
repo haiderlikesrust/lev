@@ -70,6 +70,7 @@ export class MockSolana implements Solana {
   /** Practice buyers have plenty unless a test sets their funds. */
   readonly funds = new Map<string, { usdcAccount: boolean; usdcMicros: bigint; lamports: bigint }>();
   async walletFunds(owner: string) { return this.funds.get(owner) ?? { usdcAccount: true, usdcMicros: 1_000_000_000_000n, lamports: 1_000_000_000n }; }
+  async ensureUsdcAccounts() { return true; }
 
   async creatorFeesDue() { return false; }
   async collectCreatorFees() { return null; }

@@ -134,6 +134,11 @@ export async function migrate(db: Database) {
   await once(db, 'settings-small-pool-defaults', `UPDATE settings SET data = data
     || CASE WHEN data->>'minCapMultiple' = '10' THEN '{"minCapMultiple": 1}'::jsonb ELSE '{}'::jsonb END
     || CASE WHEN data->>'ruinProbability' = '0.01' THEN '{"ruinProbability": 0.05}'::jsonb ELSE '{}'::jsonb END`);
+  // Losing cards stopped for review only because Collector Crypt's sale came as a legacy transaction, which
+  // this server can now sign: send them back to settling so the worker sells them back and pays any floor.
+  await once(db, 'resume-legacy-sales', `UPDATE orders SET status = 'settling', error = NULL, updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
+      data = data || '{"failures": 0, "retryAt": 0, "message": "Retrying."}'::jsonb
+    WHERE status = 'review' AND data->>'reviewFrom' = 'settling' AND error = 'Collector Crypt sent a sale in an unsupported transaction format.'`);
 }
 
 async function once(db: Database, id: string, sql: string) {

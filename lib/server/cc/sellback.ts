@@ -4,7 +4,7 @@ import bs58 from 'bs58';
 import { CollectorCrypt } from './client';
 import type { SaleStore } from './store';
 import { ReviewRequired } from '../jobs';
-import { MAX_TX_VERSION } from '../chain';
+import { MAX_TX_VERSION, signableVersion } from '../chain';
 
 export type SaleResult = { state: 'pending'; message: string } | { state: 'complete'; signature: string; amountMicros: number };
 
@@ -62,8 +62,8 @@ export async function sellBack(options: {
       if (!quote.available) throw new ReviewRequired('Collector Crypt will not buy this card back (already sold, or its 72-hour window closed).');
       const offer = await client.buyback(seller, mint, recipient.toBase58());
       const tx = VersionedTransaction.deserialize(Buffer.from(offer.transaction, 'base64'));
-      // CC's submitTransaction takes v0 only.
-      if (tx.version !== 0) throw new ReviewRequired('Collector Crypt sent a sale in an unsupported transaction format.');
+      // CC sends its sales as legacy transactions, paid and signed first by CC itself.
+      if (!signableVersion(tx)) throw new ReviewRequired('Collector Crypt sent a sale in an unsupported transaction format.');
       await validateSale(connection, tx, signer.publicKey, recipient, usdcMint, offer.amountMicros);
       tx.sign([signer]);
       Object.assign(sale, { amountMicros: offer.amountMicros, transaction: offer.transaction, signedTransaction: Buffer.from(tx.serialize()).toString('base64'), signature: bs58.encode(tx.signatures[tx.message.staticAccountKeys.findIndex(k => k.equals(signer.publicKey))]), blockhash: tx.message.recentBlockhash });

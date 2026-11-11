@@ -8,6 +8,11 @@ import { Jobs, PendingOperation, ReviewRequired } from './jobs';
 export const CORE_PROGRAM = 'CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d';
 /** Newest transaction format we read from chain history. */
 export const MAX_TX_VERSION = 1;
+/**
+ * Collector Crypt hands over legacy transactions (its sales) and v0 ones (its packs). web3.js 1.99 signs and
+ * simulates both the same way, but cannot sign version 1.
+ */
+export const signableVersion = (tx: VersionedTransaction) => tx.version === 'legacy' || tx.version === 0;
 /** SOL every signing wallet keeps for fees; an external transaction may not spend below it. */
 const GAS_RESERVE_LAMPORTS = 20_000_000n;
 export type TxPolicy = { kind: 'swap' | 'internal'; inputMint?: string; maxInput?: bigint; minInput?: bigint; outputMint?: string; minOutput?: bigint };
@@ -165,6 +170,17 @@ export class Chain {
         ComputeBudgetProgram.setComputeUnitLimit({ units: 60_000 }),
         createAssociatedTokenAccountIdempotentInstruction(signer.publicKey, destination, recipient, mint),
         createTransferCheckedInstruction(source, mint, destination, signer.publicKey, amount, 6),
+      ]);
+    });
+  }
+
+  /** Creates this wallet's own USDC account if it has none, paid from its SOL (about 0.002). Idempotent per job id. */
+  async createUsdcAccount(id: string) {
+    return this.execute(id, 'usdc-account', async () => {
+      const { signer } = this.require(), mint = new PublicKey(config.USDC_MINT);
+      return this.build([
+        ComputeBudgetProgram.setComputeUnitLimit({ units: 60_000 }),
+        createAssociatedTokenAccountIdempotentInstruction(signer.publicKey, getAssociatedTokenAddressSync(mint, signer.publicKey), signer.publicKey, mint),
       ]);
     });
   }

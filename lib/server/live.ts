@@ -13,13 +13,14 @@ import type { MachineConfig } from '../shared/machines';
 import type { Settings } from '../shared/settings';
 import { collectCreatorFees, creatorFeesDue } from './fees';
 import { swap } from './swap';
-import { ReviewRequired } from './jobs';
+import { PendingOperation, ReviewRequired } from './jobs';
 
 /** Turns a failed payment broadcast into one plain sentence; the raw RPC message is kept as `cause` for the logs. */
 export function paymentFailure(message: string) {
   if (/debit an account but found no record|insufficient lamports|InsufficientFundsForFee|insufficient funds for fee/i.test(message)) return 'This wallet needs a little SOL (0.002 is plenty) to pay the Solana network fee. Nothing was charged.';
   if (/insufficient funds|0x1\b/i.test(message)) return 'This wallet does not have enough USDC for this pack. Nothing was charged.';
-  if (/invalid account data|could not find account|AccountNotFound|0x3\b/i.test(message)) return 'This wallet has no USDC yet. Add USDC to it and try again. Nothing was charged.';
+  // The buyer's USDC account and balance are checked before they sign, so a missing account here is ours, not theirs.
+  if (/invalid account data|could not find account|AccountNotFound|0x3\b/i.test(message)) return 'The payment could not go through right now. Please try again in a minute. Nothing was charged.';
   if (/blockhash not found|block height exceeded|expired/i.test(message)) return 'The payment took too long to approve. Please try again. Nothing was charged.';
   return 'The payment could not be sent. Please try again. Nothing was charged.';
 }
@@ -92,6 +93,22 @@ export class LiveSolana implements Solana {
     const [account, lamports] = await Promise.all([rpc.getParsedAccountInfo(ata, 'confirmed'), rpc.getBalance(key, 'confirmed')]);
     const parsed = (account.value?.data as { parsed?: { info?: { tokenAmount?: { amount?: string } } } } | undefined)?.parsed;
     return { usdcAccount: !!account.value, usdcMicros: BigInt(parsed?.info?.tokenAmount?.amount ?? 0), lamports: BigInt(lamports) };
+  }
+
+  private readonly usdcReady = new Set<string>();
+  /** Gives LEV_OPS and LEV_POOL their own USDC accounts if either is missing one, paid from that wallet's SOL. */
+  async ensureUsdcAccounts() {
+    if (!this.canSpend) return false;
+    let ready = true;
+    for (const chain of [this.ops, this.pool]) {
+      const address = chain.address!;
+      if (this.usdcReady.has(address)) continue;
+      if ((await this.walletFunds(address)).usdcAccount) { this.usdcReady.add(address); continue; }
+      ready = false;
+      try { await chain.createUsdcAccount(`usdc-account:${address}`); }
+      catch (error) { if (!(error instanceof PendingOperation)) throw error; }
+    }
+    return ready;
   }
 
   async creatorFeesDue(settings: Settings) { return this.canSpend && !!config.MEMECOIN_MINT && creatorFeesDue(this.pool, settings); }

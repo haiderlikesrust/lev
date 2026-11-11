@@ -190,6 +190,8 @@ function startWorker(c: Coordinator, s: Services) {
     if (calibrationStale(rows)) await runCalibration(s.db, s.collector, s.settings.current);
   });
   loop('cleanup', 3_600_000, async () => { for (const table of ['challenges', 'sessions']) await s.db.query(`DELETE FROM ${table} WHERE expires_at < $1`, [Date.now()]); });
+  // Every pack payment lands in LEV_OPS's USDC account, so it must exist before anyone can pay.
+  if (config.live) loop('usdc-accounts', 60_000, () => s.solana.ensureUsdcAccounts());
   if (config.live) loop('creator-fees', 120_000, async () => { if (await s.burns.feesDue()) await s.serial.run(() => s.burns.collectFees()); });
   console.log(`[worker] started (${config.live ? 'mainnet' : 'practice mode'})`);
 }

@@ -3,6 +3,7 @@ import bs58 from 'bs58';
 import { CollectorCrypt, normalizeCard, type Card } from './client';
 import type { PurchaseStore } from './store';
 import { validatePackPayment } from './pack-policy';
+import { signableVersion } from '../chain';
 
 export type PurchaseResult = { state: 'pending'; memo?: string; signature?: string; message: string } | { state: 'complete'; memo: string; signature: string; card: Card };
 
@@ -27,8 +28,8 @@ export async function buyPack(options: {
     const pending = (message: string): PurchaseResult => ({ state: 'pending', memo: order!.memo, signature: order!.signature, message });
     if (!order.signedTransaction) {
       const tx = VersionedTransaction.deserialize(Buffer.from(order.transaction!, 'base64'));
-      // web3.js 1.99 cannot sign version-1 transactions; nothing is signed, so the order retries or refunds.
-      if (tx.version !== 0 && tx.version !== 'legacy') throw new Error('Collector Crypt sent a transaction format this server cannot sign yet; no USDC moved.');
+      // Nothing is signed yet, so an unsignable format retries or refunds the order.
+      if (!signableVersion(tx)) throw new Error('Collector Crypt sent a transaction format this server cannot sign yet; no USDC moved.');
       validatePackPayment(tx, signer.publicKey, paymentWallet, usdcMint, BigInt(priceUsdc) * 1_000_000n, order.memo!);
       if (!(await connection.isBlockhashValid(tx.message.recentBlockhash, { commitment: 'confirmed' })).value) throw new Error('Unsigned order expired. Check its provider status before starting a new order ID.');
       tx.sign([signer]);
