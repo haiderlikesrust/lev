@@ -19,7 +19,7 @@ export function Rule({ name }: { name: 'cap' | 'edge' | 'minEdge' | 'cooldown' |
     target: usdShort(r.targetReserveUsd),
     minCap: `${r.minCapMultiple}× the pack price`,
     window: `${r.calibrationWindowDays} days`,
-    ruin: `${r.ruinProbability * 100}%`,
+    ruin: `${+(r.ruinProbability * 100).toFixed(2)}%`,
     shortGuard: `${r.shortGuardSeconds} seconds`,
     shortWait: `${r.shortWaitMinutes} minutes`,
   }[name];

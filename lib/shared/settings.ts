@@ -11,11 +11,11 @@ export type Settings = {
   paused: boolean;
   /** Pool edge per pack at launch, and the lower edge a machine moves to once its data supports it (bps of the pack price). */
   edgeBps: number; minEdgeBps: number;
-  /** Largest bonus on one pack, as bps of the free pool, locked when the order is made. */
+  /** The most of the free pool one pack's bonus cap can take (bps), locked when the order is made. */
   capBps: number;
-  /** A level opens only once that cap is at least this many pack prices. */
+  /** The tightest bonus cap a level opens with, in pack prices. The cap grows with the pool from there. */
   minCapMultiple: number;
-  /** A level opens only once the pool covers its bankroll for this chance of ruin. */
+  /** A level opens only once the free pool can absorb its ups and downs, with at most this chance of a losing run emptying it. */
   ruinProbability: number;
   calibrationWindowDays: number; calibrationMaxAgeHours: number; minSamples: number;
   /** New packs stop when the free pool drops below this; packs in progress still settle. 0 = off. */
@@ -49,7 +49,7 @@ export type Settings = {
 export const DEFAULT_SETTINGS: Settings = {
   paused: false,
   edgeBps: 500, minEdgeBps: 300,
-  capBps: 1_000, minCapMultiple: 10, ruinProbability: 0.01,
+  capBps: 1_000, minCapMultiple: 1, ruinProbability: 0.05,
   calibrationWindowDays: 30, calibrationMaxAgeHours: 48, minSamples: 200,
   pauseThresholdUsd: 0, targetReserveUsd: 50_000,
   perWalletDailyPacks: 0, perWalletDailyUsd: 0, globalDailyUsd: 0,

@@ -3,10 +3,16 @@ import { audit } from './db';
 import type { Collector } from './collector';
 import { calibrateMachine, type CalibrationRow } from '../shared/calibration';
 import { calibrateShort, type ShortCalibrationRow } from '../shared/short';
+import { CAP_GRID } from '../shared/leverage';
 import type { Settings } from '../shared/settings';
 import { MACHINES } from '../shared/machines';
 
 const DAY = 86_400_000;
+
+/** True when the stored calibration is missing, over a day old, or priced before the current set of bonus caps. */
+export function calibrationStale(rows: CalibrationRow[], now = Date.now()) {
+  return !rows.length || now - Math.min(...rows.map(r => r.computedAt)) > DAY || rows.some(r => CAP_GRID.some(c => !r.fair.some(f => f.capRatio === c)));
+}
 /** Most recent pulls per machine the calibration uses; keeps the bootstrap fast. */
 const MAX_PULLS = 20_000;
 const seedOf = (code: string) => [...code].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);

@@ -104,6 +104,8 @@ export const playerReturn = (normalReturn: number, poolEdge: number) => normalRe
 export const closedFormK = (d: Pick<Decomposition, 'A' | 'W'>, edge: number) => d.W > 0 ? Math.max(0, (d.A - edge) / d.W) : 0;
 
 const K_MAX = 5;
+/** The highest multiple the solver reaches. A cap so tight that its fair multiple would need more can't be priced fairly. */
+export const MAX_MULTIPLIER_BPS = ONE_X_BPS * (1 + K_MAX);
 /** The k that leaves the pool `edge` per pack, with the cap applied (numeric). 0 when even k = 0 can't reach it. */
 export function solveK(ratios: readonly number[], buyback: number, floor: number, edge: number, capRatio = Infinity) {
   const at = (k: number) => moments(ratios, { buyback, floor, k, capRatio }).mean;
@@ -164,17 +166,11 @@ export function ruinBankrollMicros(sd: number, edge: number, priceMicros: number
   return Math.ceil(sd * sd * Math.log(1 / ruinProbability) / (2 * edge) * priceMicros);
 }
 
-/** Cap ratios (in pack prices) the calibration tabulates fair multipliers at; null is no cap. */
-export const CAP_GRID: (number | null)[] = [10, 20, 50, 100, null];
-
 /**
- * The fair multiplier at the smallest tabulated cap that is at least the real one. A looser cap pays
- * winners more, so its fair multiplier is lower: this never quotes above the true fair value.
+ * Bonus caps (in pack prices) the calibration prices, tightest first; null is no cap. A small pool offers
+ * a tight cap at a higher multiple, and the cap loosens as the pool grows.
  */
-export function fairAtCap<T extends { capRatio: number | null }>(table: T[], capRatio: number): T | undefined {
-  const size = (c: number | null) => c ?? Number.POSITIVE_INFINITY;
-  return table.filter(t => size(t.capRatio) >= capRatio).sort((a, b) => size(a.capRatio) - size(b.capRatio))[0];
-}
+export const CAP_GRID: (number | null)[] = [1, 2, 3, 5, 10, 20, 50, 100, null];
 
 /** Normal-approximation 95% lower bound. Sound for capped payouts, whose tail is cut off; uncapped ones use the bootstrap. */
 export const lcb95Normal = (mean: number, sd: number, n: number) => mean - 1.645 * sd / Math.sqrt(Math.max(1, n));

@@ -125,8 +125,21 @@ export async function migrate(db: Database) {
     // The CC pull a short rode (its card, CC's timestamp), as public proof.
     `ALTER TABLE settlements ADD COLUMN IF NOT EXISTS pull JSONB`,
     `CREATE TABLE IF NOT EXISTS burns (id TEXT PRIMARY KEY, status TEXT NOT NULL, usdc_micros BIGINT NOT NULL, tokens TEXT, swap_signature TEXT, burn_signature TEXT, started_by TEXT NOT NULL, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL, error TEXT)`,
+    // One-time data changes, each recorded so it runs once per database.
+    `CREATE TABLE IF NOT EXISTS migrations (id TEXT PRIMARY KEY, applied_at BIGINT NOT NULL)`,
   ];
   for (const statement of statements) await db.query(statement);
+  // Saved settings still on the old pool-safety defaults move to the new ones, which open the cheapest pack on a
+  // $100 pool. Values the owner chose are left alone.
+  await once(db, 'settings-small-pool-defaults', `UPDATE settings SET data = data
+    || CASE WHEN data->>'minCapMultiple' = '10' THEN '{"minCapMultiple": 1}'::jsonb ELSE '{}'::jsonb END
+    || CASE WHEN data->>'ruinProbability' = '0.01' THEN '{"ruinProbability": 0.05}'::jsonb ELSE '{}'::jsonb END`);
+}
+
+async function once(db: Database, id: string, sql: string) {
+  if ((await db.query('SELECT 1 FROM migrations WHERE id=$1', [id])).rows.length) return;
+  await db.query(sql);
+  await db.query('INSERT INTO migrations(id, applied_at) VALUES($1, $2) ON CONFLICT(id) DO NOTHING', [id, Date.now()]);
 }
 
 export class Serial {

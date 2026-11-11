@@ -1,5 +1,5 @@
 import {
-  CAP_GRID, LEVELS, LEVEL_FLOOR_BPS, ONE_X_BPS, bootstrap, decompose, fairAtCap, lcb95Normal, moments, playerReturn, poolEv, poolSd,
+  CAP_GRID, LEVELS, LEVEL_FLOOR_BPS, MAX_MULTIPLIER_BPS, ONE_X_BPS, bootstrap, decompose, lcb95Normal, moments, playerReturn, poolEv, poolSd,
   roundDownMultiplierBps, ruinBankrollMicros, safeMultiplierBps, solveK, type Level,
 } from './leverage';
 import type { Side } from './short';
@@ -15,8 +15,10 @@ export type CalibrationRow = {
   /**
    * Fair multipliers per target edge and cap (cap in pack prices, null = none), each rounded down to the
    * 0.05x grid, and whether the data supports it: pool EV's 95% lower bound at that multiple is ≥ 0.
+   * `mean` and `sd` are the pool's EV and standard deviation per pack at that multiple and cap (pack prices);
+   * rows calibrated before caps under 10× lack them.
    */
-  fair: { edgeBps: number; capRatio: number | null; bps: number; safe: boolean }[];
+  fair: { edgeBps: number; capRatio: number | null; bps: number; safe: boolean; mean?: number; sd?: number }[];
   /** Largest multiplier whose bootstrapped LCB95 pool EV is ≥ 0 (uncapped, so conservative). */
   safeBps: number;
 };
@@ -34,7 +36,7 @@ export function calibrateMachine(code: string, ratios: readonly number[], buybac
       const bps = roundDownMultiplierBps(Math.round(ONE_X_BPS * (1 + solveK(ratios, buyback, floor, edgeBps / 10_000, cap))));
       const at = moments(ratios, { buyback, floor, k: (bps - ONE_X_BPS) / ONE_X_BPS, capRatio: cap });
       const safe = bps > ONE_X_BPS && (capRatio === null ? bps <= safeBps : lcb95Normal(at.mean, at.sd, d.n) >= 0);
-      return { edgeBps, capRatio, bps, safe };
+      return { edgeBps, capRatio, bps, safe, mean: at.mean, sd: at.sd };
     }));
     return {
       code, level, n: d.n, fromMs: window.fromMs, toMs: window.toMs, computedAt: options.now ?? Date.now(),
@@ -71,29 +73,62 @@ export type Offer = {
 
 const usd = (micros: number) => `$${Math.ceil(micros / 1_000_000).toLocaleString('en-US')}`;
 
+/** A top bonus up to the pack's own price may take a quarter of the free pool; a bigger one only `capBps` of it. */
+const PRICE_CAP_SHARE_BPS = 2_500;
+
+/** One way to offer a level: a bonus cap and pool edge at their fair multiple, and the free pool they need. */
+type CapTerms = { capRatio: number | null; bps: number; edgeBps: number; edge: number; capMicros: number; needMicros: number };
+
+/**
+ * Every way the calibration priced this level: each bonus cap at each target edge the data supports, at its fair
+ * multiple. Each needs a free pool that both carries its ups and downs (under `ruinProbability`) and fits the cap
+ * in one pack's share. A cap so tight that its fair multiple would pass the solver's ceiling is left out: the
+ * multiple shown there would quietly widen the pool's edge.
+ */
+function capTerms(row: CalibrationRow, ctx: OfferContext, share: number): CapTerms[] {
+  const s = ctx.settings, price = ctx.priceMicros, largest = Math.max(0, ...row.fair.map(f => f.capRatio ?? 0));
+  return row.fair.flatMap(f => {
+    if (!f.safe || f.bps >= MAX_MULTIPLIER_BPS || (f.edgeBps !== s.minEdgeBps && f.edgeBps !== s.edgeBps)) return [];
+    if (f.capRatio !== null && f.capRatio < s.minCapMultiple) return [];
+    const k = (f.bps - ONE_X_BPS) / ONE_X_BPS;
+    // Rounding down only adds to the pool's edge. Rows from before capped figures were stored use the uncapped ones,
+    // which only overstate the risk.
+    const edge = Math.max(f.edgeBps / 10_000, f.mean ?? poolEv(row, k)), sd = f.sd ?? poolSd(row, k);
+    // A finite cap is exactly that many pack prices. With none, the pack's share of the pool caps the bonus, and the
+    // share must pass the largest tabulated cap for the uncapped multiple to be the fair one.
+    const minShare = f.capRatio === null ? largest * price + 1 : f.capRatio * price;
+    const shareBps = minShare <= price ? Math.max(s.capBps, PRICE_CAP_SHARE_BPS) : s.capBps;
+    const needMicros = Math.max(ruinBankrollMicros(sd, edge, price, s.ruinProbability), Math.ceil(minShare * 10_000 / shareBps));
+    return [{ capRatio: f.capRatio, bps: f.bps, edgeBps: f.edgeBps, edge, capMicros: f.capRatio === null ? Math.max(share, minShare) : minShare, needMicros }];
+  });
+}
+
 /**
  * What a machine × level can be offered at right now, or why not. Pure, so the UI and server agree.
  *
  * A level is only ever offered at a fair multiple: the one leaving the pool `minEdgeBps` once the data
  * supports it (bootstrapped LCB95 ≥ 0), else the one leaving `edgeBps`. If the data supports neither, the
  * level waits for more pulls rather than quietly widening the pool's edge.
+ *
+ * The bonus cap is the loosest one the free pool can carry, at the lowest edge that carries it. A small pool opens a
+ * level with a tight cap (as little as the pack price) at the launch edge; as the pool grows, the cap and the top
+ * bonus grow, the multiple eases, and the lower edge takes over. Every pack in progress reserves its cap, so what is
+ * left decides what else can open.
  */
 export function offer(row: CalibrationRow, ctx: OfferContext): Offer {
-  const s = ctx.settings, k = (bps: number) => (bps - ONE_X_BPS) / ONE_X_BPS;
-  const capMicros = Math.floor(Math.max(0, ctx.freeMicros) * s.capBps / 10_000);
-  // Below the unlock size, price as if the pool were exactly there: a bigger pool loosens the cap, which only
-  // lowers the fair multiple and its bankroll, so "unlocks at $X" holds once the pool reaches $X.
-  const capRatio = Math.max(capMicros / ctx.priceMicros, s.minCapMultiple);
-  const fairAt = (edgeBps: number) => fairAtCap(row.fair.filter(f => f.edgeBps === edgeBps), capRatio);
-  const low = fairAt(s.minEdgeBps), high = fairAt(s.edgeBps);
-  const priced = low?.safe ? low : high?.safe ? high : null;
-  const multiplierBps = priced?.bps ?? high?.bps ?? ONE_X_BPS, edgeBps = priced?.edgeBps ?? s.edgeBps;
-  // The cap and rounding down only add to the pool's edge; the uncapped figure is a floor under it.
-  const edge = Math.max(edgeBps / 10_000, poolEv(row, k(multiplierBps))), sd = poolSd(row, k(multiplierBps));
-  const bankroll = ruinBankrollMicros(sd, edge, ctx.priceMicros, s.ruinProbability);
-  const unlockAtMicros = Math.max(bankroll, Math.ceil(s.minCapMultiple * ctx.priceMicros * 10_000 / s.capBps));
+  const s = ctx.settings, free = Math.max(0, ctx.freeMicros), share = Math.floor(free * s.capBps / 10_000);
+  const terms = capTerms(row, ctx, share), size = (t: CapTerms) => t.capRatio ?? Number.MAX_VALUE;
+  const open = terms.filter(t => free >= t.needMicros).sort((a, b) => size(b) - size(a) || a.edgeBps - b.edgeBps)[0];
+  // Until something fits, show the terms the level opens with, so "unlocks at $X" holds once the pool reaches $X.
+  const first = [...terms].sort((a, b) => a.needMicros - b.needMicros || size(b) - size(a) || a.edgeBps - b.edgeBps)[0];
+  const shown = open ?? first;
+  // With nothing priced fairly yet, preview the launch-edge multiple at the loosest cap: the lowest it would be.
+  const preview = row.fair.filter(f => f.edgeBps === s.edgeBps && (f.capRatio ?? Infinity) >= s.minCapMultiple && f.bps < MAX_MULTIPLIER_BPS)
+    .sort((a, b) => a.bps - b.bps)[0];
+  const multiplierBps = shown?.bps ?? preview?.bps ?? ONE_X_BPS, edgeBps = shown?.edgeBps ?? s.edgeBps, edge = shown?.edge ?? s.edgeBps / 10_000;
+  const unlockAtMicros = first?.needMicros ?? Number.POSITIVE_INFINITY;
   const base: Offer = {
-    side: 'long', level: row.level, available: false, reason: null, multiplierBps, floorBps: Math.round(row.floor * 10_000), capMicros, edgeBps,
+    side: 'long', level: row.level, available: false, reason: null, multiplierBps, floorBps: Math.round(row.floor * 10_000), capMicros: shown?.capMicros ?? 0, edgeBps,
     poolEdge: edge, playerReturn: playerReturn(row.normalReturn, edge), normalReturn: row.normalReturn,
     pLoss: row.pLoss, pPush: row.pPush, pWin: row.pWin,
     maxLossMicros: ctx.priceMicros - Math.floor(row.floor * row.buyback * ctx.minValueMicros),
@@ -102,8 +137,8 @@ export function offer(row: CalibrationRow, ctx: OfferContext): Offer {
   const reason =
     ctx.now - row.computedAt > s.calibrationMaxAgeHours * 3_600_000 ? 'Paused until the odds are re-checked.'
     : row.n < s.minSamples ? `Collecting pull data (${row.n} of ${s.minSamples}).`
-    : !priced || !Number.isFinite(unlockAtMicros) ? 'Collecting more pulls before this can be priced fairly.'
-    : ctx.freeMicros < unlockAtMicros ? `Unlocks when the pool reaches ${usd(unlockAtMicros)}.`
+    : !Number.isFinite(unlockAtMicros) ? 'Collecting more pulls before this can be priced fairly.'
+    : !open ? `Unlocks when the pool reaches ${usd(unlockAtMicros)}.`
     : null;
   return { ...base, available: reason === null, reason };
 }

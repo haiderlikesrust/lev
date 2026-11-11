@@ -112,7 +112,7 @@ describe('leverage packs (practice mode)', () => {
   });
 
   it('keeps a level locked until the pool reaches its unlock size, then opens it after creator fees arrive', async () => {
-    const ctx = await setup(1_500);
+    const ctx = await setup(150);
     await expect(ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'full', true)).rejects.toThrow(/Unlocks when the pool reaches/);
     await claimFees(ctx, 5_000);
     ctx.s.pool.invalidate();
@@ -180,8 +180,22 @@ describe('leverage packs (practice mode)', () => {
     await expect(ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'full', true)).rejects.toThrow(/own daily loss limit/);
   });
 
+  it('opens the $25 Half pack on a $100 pool, one pack at a time', async () => {
+    const ctx = await setup(100), other = Keypair.generate().publicKey.toBase58();
+    ctx.packs.forceValues.push(13);
+    const { order } = await ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'half', true);
+    expect(order.capUsd).toBe(25);
+    await ctx.s.orders.pay(ctx.wallet, order.id, 'practice');
+    // Its $25 top bonus is set aside, so the next pack waits until this one settles.
+    await expect(ctx.s.orders.create(other, 'pokemon_25', 'half', true)).rejects.toThrow(/Unlocks when the pool reaches/);
+    for (let i = 0; i < 10; i++) { await ctx.s.orders.step(); if ((await ctx.s.orders.get(order.id)).status === 'complete') break; }
+    expect((await ctx.s.orders.get(order.id)).outcome).toBe('loss');
+    ctx.s.pool.invalidate();
+    expect((await ctx.s.orders.create(other, 'pokemon_25', 'half', true)).order.capUsd).toBe(25);
+  });
+
   it('has no pool safety line by default, but a level still waits for its unlock size', async () => {
-    const ctx = await setup(500);
+    const ctx = await setup(60);
     expect(await ctx.s.pool.pauseReason()).toBeNull();
     await expect(ctx.s.orders.create(ctx.wallet, 'pokemon_25', 'half', true)).rejects.toThrow(/Unlocks when the pool reaches/);
   });

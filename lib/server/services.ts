@@ -14,7 +14,7 @@ import { LevPool } from './pool';
 import { Limits } from './limits';
 import { Collector } from './collector';
 import { Orders } from './orders';
-import { loadCalibration, loadShortCalibration, runCalibration } from './calibration';
+import { calibrationStale, loadCalibration, loadShortCalibration, runCalibration } from './calibration';
 import { httpError, redact } from './redact';
 import type { PackProvider, Solana } from './ports';
 
@@ -59,7 +59,7 @@ export async function bootstrap(s: Services) {
   if (!config.live && !config.practiceLiveData) await s.collector.seedFromSample();
   else await s.collector.poll().catch(() => 0);
   const rows = await loadCalibration(s.db);
-  if (!rows.length || !(await loadShortCalibration(s.db)).length || Date.now() - Math.min(...rows.map(r => r.computedAt)) > 24 * 3_600_000) await runCalibration(s.db, s.collector, s.settings.current);
+  if (calibrationStale(rows) || !(await loadShortCalibration(s.db)).length) await runCalibration(s.db, s.collector, s.settings.current);
 }
 
 /**
@@ -187,7 +187,7 @@ function startWorker(c: Coordinator, s: Services) {
   loop('machines', 600_000, () => s.collector.refreshMachines());
   loop('calibration', 3_600_000, async () => {
     const rows = await loadCalibration(s.db);
-    if (!rows.length || Date.now() - Math.min(...rows.map(r => r.computedAt)) > 24 * 3_600_000) await runCalibration(s.db, s.collector, s.settings.current);
+    if (calibrationStale(rows)) await runCalibration(s.db, s.collector, s.settings.current);
   });
   loop('cleanup', 3_600_000, async () => { for (const table of ['challenges', 'sessions']) await s.db.query(`DELETE FROM ${table} WHERE expires_at < $1`, [Date.now()]); });
   if (config.live) loop('creator-fees', 120_000, async () => { if (await s.burns.feesDue()) await s.serial.run(() => s.burns.collectFees()); });

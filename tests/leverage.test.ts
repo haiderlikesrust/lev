@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  bonusMicros, bootstrap, classify, closedFormK, decompose, fairAtCap, floorRefundMicros, moments, playerReturn,
+  MAX_MULTIPLIER_BPS, bonusMicros, bootstrap, classify, closedFormK, decompose, floorRefundMicros, moments, playerReturn,
   poolEv, rng, roundDownMultiplierBps, ruinBankrollMicros, safeMultiplierBps, solveK,
 } from '@/lib/shared/leverage';
 import { calibrateMachine, offer, type OfferContext } from '@/lib/shared/calibration';
+import { calibrationStale } from '@/lib/server/calibration';
 import { calibrateShort, decomposeShort, fairShortBps, shortMaxPayoutMicros, shortOffer, shortOutcome, shortPayoutMicros, shortPoolEv, shortPoolPnl } from '@/lib/shared/short';
 
 const M = 1_000_000;
@@ -75,13 +76,6 @@ describe('calibration math', () => {
     expect(moments(ratios, { buyback: b, floor: 0, k: capped, capRatio: 5 }).mean).toBeCloseTo(0.05, 6);
   });
 
-  it('quotes the fair multiple of the next looser tabulated cap', () => {
-    const table = [{ capRatio: 10, bps: 30_000 }, { capRatio: 20, bps: 28_000 }, { capRatio: null, bps: 25_000 }];
-    expect(fairAtCap(table, 15)?.bps).toBe(28_000);
-    expect(fairAtCap(table, 10)?.bps).toBe(30_000);
-    expect(fairAtCap(table, 500)?.bps).toBe(25_000);
-  });
-
   it('the bootstrap safety limit tightens on small samples', () => {
     const big = safeMultiplierBps(bootstrap(ratios, b, 400, 1), 0), small = safeMultiplierBps(bootstrap(ratios.slice(0, 150), b, 400, 1), 0);
     const fair = Math.round(10_000 * (1 + solveK(ratios, b, 0, 0)));
@@ -117,6 +111,73 @@ describe('offers', () => {
     expect(small.reason).toMatch(/Unlocks when the pool reaches/);
     expect(small.unlockAtMicros).toBeGreaterThanOrEqual(10 * 100 * M / 0.1);
     expect(offer(full, ctx(small.unlockAtMicros / M)).available).toBe(true);
+  });
+
+  describe('with caps from 2x the price', () => {
+    const smart = { ...settings, minCapMultiple: 2 };
+    const at = (row: typeof half, freeUsd: number) => offer(row, { ...ctx(freeUsd), settings: smart });
+    const ratios = sample(20_000, 3);
+
+    it('opens on a far smaller pool, with a tight cap that grows with the pool', () => {
+      const opening = at(half, 0);
+      expect(opening.unlockAtMicros).toBeLessThan(offer(half, ctx(0)).unlockAtMicros / 3);
+      const small = at(half, opening.unlockAtMicros / M), big = at(half, 10_000_000);
+      expect(small.available && big.available).toBe(true);
+      expect(small.capMicros).toBe(2 * 100 * M);
+      expect(big.capMicros).toBeGreaterThan(small.capMicros);
+      expect(at(half, opening.unlockAtMicros / M - 1).available).toBe(false);
+    });
+
+    it('prices each cap fairly: the pool keeps its edge at the cap it offers', () => {
+      for (const row of [half, full]) for (const freeUsd of [1_000, 3_000, 8_000, 30_000, 10_000_000]) {
+        const o = at(row, freeUsd);
+        if (!o.available) continue;
+        const pnl = moments(ratios, { buyback: 0.9, floor: row.floor, k: (o.multiplierBps - 10_000) / 10_000, capRatio: o.capMicros / (100 * M) });
+        expect(pnl.mean).toBeGreaterThanOrEqual(o.edgeBps / 10_000 - 1e-9);
+        expect(o.poolEdge).toBeCloseTo(pnl.mean, 9);
+        expect(o.capMicros).toBeLessThanOrEqual(freeUsd * M * smart.capBps / 10_000);
+      }
+    });
+
+    it('skips a cap so tight that its fair multiple would hit the ceiling', () => {
+      const tight = { ...full, fair: full.fair.map(f => f.capRatio === 2 ? { ...f, bps: MAX_MULTIPLIER_BPS } : f) };
+      const opening = at(tight, 0);
+      expect(opening.capMicros).toBeGreaterThan(2 * 100 * M);
+      expect(opening.multiplierBps).toBeLessThan(MAX_MULTIPLIER_BPS);
+    });
+
+    it('keeps rows calibrated before the small caps on their old terms, and recalibrates them', () => {
+      const old = { ...half, fair: half.fair.filter(f => f.capRatio === null || f.capRatio >= 10).map(f => ({ edgeBps: f.edgeBps, capRatio: f.capRatio, bps: f.bps, safe: f.safe })) };
+      expect(at(old, 0).unlockAtMicros).toBeGreaterThanOrEqual(10 * 100 * M / 0.1);
+      expect(calibrationStale([old], 2_000)).toBe(true);
+      expect(calibrationStale([half, full], 2_000)).toBe(false);
+      expect(calibrationStale([half, full], 1_000 + 25 * 3_600_000)).toBe(true);
+    });
+  });
+
+  describe('on a small pool', () => {
+    // A $25 pack priced at 1x and 2x caps at both edges: the pool's EV and SD per pack, in pack prices.
+    const row = { ...half, fair: [
+      { edgeBps: 300, capRatio: 1, bps: 19_000, safe: true, mean: 0.031, sd: 0.36 },
+      { edgeBps: 500, capRatio: 1, bps: 17_500, safe: true, mean: 0.05, sd: 0.36 },
+      { edgeBps: 300, capRatio: 2, bps: 16_500, safe: true, mean: 0.035, sd: 0.41 },
+      { edgeBps: 500, capRatio: 2, bps: 15_500, safe: true, mean: 0.05, sd: 0.41 },
+    ] };
+    const small = { ...settings, minCapMultiple: 1, ruinProbability: 0.05 };
+    const at = (freeUsd: number) => offer(row, { priceMicros: 25 * M, freeMicros: freeUsd * M, minValueMicros: 13 * M, now: 2_000, settings: small });
+
+    it('opens on four times the pack price, with a top bonus of the price, at the launch edge', () => {
+      expect(at(99).reason).toBe('Unlocks when the pool reaches $100.');
+      const o = at(100);
+      expect(o.available).toBe(true);
+      expect([o.capMicros, o.multiplierBps, o.edgeBps]).toEqual([25 * M, 17_500, 500]);
+    });
+
+    it('moves to the lower edge, then to a bigger top bonus, as the pool grows', () => {
+      const mid = at(160), big = at(500);
+      expect([mid.capMicros, mid.multiplierBps, mid.edgeBps]).toEqual([25 * M, 19_000, 300]);
+      expect([big.capMicros, big.multiplierBps, big.edgeBps]).toEqual([50 * M, 16_500, 300]);
+    });
   });
 
   it('waits for more pulls instead of widening the pool edge on thin data', () => {

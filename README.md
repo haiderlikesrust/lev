@@ -78,11 +78,14 @@ There are no fixed tiers. Each machine × level gets the multiplier that leaves 
   - `b` is the machine's buyback; `φ` is the floor (0 for Full, 0.5 for Half).
   - With the bonus cap applied, it is solved numerically.
 - **What players see:** valued at CC's sellback price, **player return = normal-open return − pool edge**, exactly. The Open page shows both numbers.
-- **Edge:** 5% at launch. A machine drops to 3% once the data supports it, meaning the pool's 95% lower bound is ≥ 0 (bootstrap uncapped, normal approximation capped).
+- **Edge:** 5% at launch. A machine drops to 3% once the data supports it, meaning the pool's 95% lower bound is ≥ 0 (bootstrap uncapped, normal approximation capped), and once the pool is big enough to carry it at 3%.
 - **Thin data:** if the data supports neither edge, the level stays locked ("collecting pulls"). It is never offered at a worse multiple.
-- **Unlocking:** a level opens once the free pool covers both of these:
-  - its 1%-ruin bankroll `σ²·ln(100)/(2·edge)·price`;
-  - a bonus cap of at least 10× the pack price.
+- **Bonus caps:** each level is priced at caps of 1, 2, 3, 5, 10, 20, 50 and 100× the pack price, and with none. A pack gets the loosest cap the free pool can carry, at the lowest edge that carries it, so a small pool opens a level with a tight cap at a higher multiplier, and the cap grows with the pool. A cap whose fair multiplier would pass 6x is never offered.
+- **Unlocking:** a cap fits once the free pool covers both of these:
+  - its 5%-ruin bankroll `σ²·ln(20)/(2·edge)·price`, with σ and the edge at that cap;
+  - the cap itself: up to the pack price it may use 25% of the free pool, above that 10%; and at least 1× the pack price.
+
+  So the $25 pack opens on about a $100 pool. Every pack reserves its cap, so near the line one pack runs at a time, and a single win (at most the cap) closes the level until fees refill the pool.
 
 On today's one-day sample at a $50k pool, three levels are live: $25 Half 1.50x, $25 Full 2.10x and $50 Half 1.70x. The rest open as pulls accumulate. The collector adds about 80 an hour on busy machines.
 
@@ -99,7 +102,7 @@ The same pulls price shorts (`lib/shared/short.ts`): the pool's EV per short is 
 ## Pool safety and responsible play
 
 - **Own wallet:** `LEV_POOL`, our coin's dev wallet. Nothing is shared with Pullback.
-- **Bonus cap:** 10% of the free pool per pack, locked at quote. Every pack in progress reserves its cap.
+- **Bonus cap:** the loosest priced cap the pool can carry (10% of the free pool, or 25% for a cap up to the pack price), locked at quote. Every pack in progress reserves its cap.
 - **Auto-pause:**
   - globally, below an optional safety line (off by default, set in `/admin`);
   - per machine, when calibration is over 48 h old.

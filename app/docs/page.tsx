@@ -116,7 +116,7 @@ export default function DocsPage() {
           <p>Multipliers aren&apos;t picked by hand. Every day each one is solved from the machine&apos;s real CC pulls over the last <Rule name="window" />, so the pool keeps only a small, fixed edge.</p>
           <p>Start from a <strong>normal open</strong>: buy the pack and sell the card straight back to CC. On average that returns a little less than the pack price (the &ldquo;normal open&rdquo; column below). Valued the same way, the pool and the leverage player split exactly what a normal open returns, so:</p>
           <Formula>your average result = normal-open result − pool edge</Formula>
-          <p>The pool edge is <Rule name="edge" /> at launch, dropping to <Rule name="minEdge" /> on a machine once its data is strong enough. The multiplier that gives exactly that edge is:</p>
+          <p>The pool edge is <Rule name="edge" /> at launch, dropping to <Rule name="minEdge" /> on a machine once its data is strong enough and the pool is big enough to carry it. The multiplier that gives exactly that edge is:</p>
           <Formula>M = 1 + ((1 − floor) × buyback × L − edge) / W</Formula>
           <p><em>L</em> is the average value of losing pulls (as a share of the price), <em>W</em> is how far winning pulls beat the price on average, and <em>floor</em> is 0 for Full risk and 0.5 for Half risk. With the bonus cap applied it&apos;s solved numerically. Multipliers are always rounded <em>down</em> to the nearest 0.05x.</p>
           <p>A level only opens when the data is strong enough to be confident the pool really keeps its edge: the 95% lower bound of the pool&apos;s result must stay above zero. A level never opens at a worse multiplier to make up for thin data; it waits for more pulls instead.</p>
@@ -135,7 +135,7 @@ export default function DocsPage() {
             <li><strong>Money in:</strong> sellbacks of losing cards, plus 85% of our coin&apos;s creator fees. The fees are claimed automatically and swapped to USDC on Jupiter, and every claim is listed on the <Link href="/pool">Pool page</Link>.</li>
             <li><strong>Money out:</strong> win bonuses and Half-risk floors.</li>
             <li><strong>Reservations:</strong> while a pack is open, its biggest possible bonus is set aside, so every bonus in progress is always payable. &ldquo;Free&rdquo; balance is what&apos;s left.</li>
-            <li><strong>Unlocks:</strong> a level opens only when the free pool can absorb that level&apos;s ups and downs (under a <Rule name="ruin" /> chance of running dry) and its bonus cap is at least <Rule name="minCap" />. Bigger machines unlock as the pool grows.</li>
+            <li><strong>Bonus caps and unlocks:</strong> each pack&apos;s bonus cap is the biggest the pool can carry, from <Rule name="minCap" /> up, and its multiplier is priced fairly for that cap. A cap up to the pack price can use a quarter of the free pool; a bigger one at most <Rule name="cap" />. A level opens once the free pool can absorb its ups and downs (under a <Rule name="ruin" /> chance of running dry). As the pool grows, caps and top bonuses grow and bigger machines open.</li>
             <li><strong>Odds checks:</strong> a machine pauses if its odds haven&apos;t been re-checked in 48 hours. Packs in progress still settle.</li>
             <li><strong>Pool HP:</strong> the health bar shows the free pool against a <Rule name="target" /> target.</li>
           </ul>
