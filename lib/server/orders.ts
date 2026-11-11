@@ -325,7 +325,7 @@ export class Orders {
     d = row.data;
     if (d.outcome === 'loss') {
       if (!d.sellSignature) {
-        const sale = await this.packs.sellBack(`order-${row.id}`, d.card!.mint);
+        const sale = await this.packs.sellBack(`order-${row.id}`, d.card!.mint, d.memo);
         if (sale.state === 'pending') throw new PendingOperation(sale.message);
         await record(this.db, { id: `order:${row.id}:sellback`, bucket: 'pool', kind: 'sellback', micros: sale.amountMicros, signature: sale.signature, ref: row.id });
         this.pool.invalidate();

@@ -44,7 +44,7 @@ export interface PackProvider {
   /** Resumable and idempotent per purchase id. Buys with LEV_OPS, which receives the card. */
   buy(purchaseId: string, code: string, priceUsd: number): Promise<PurchaseResult>;
   /** Resumable and idempotent per sale id: LEV_OPS sells the card back, the USDC goes to LEV_POOL. */
-  sellBack(saleId: string, mint: string): Promise<SaleResult>;
+  sellBack(saleId: string, mint: string, memo?: string): Promise<SaleResult>;
   /** Raw `/pack/status?memo=` response. */
   status(memo: string): Promise<any>;
   /** CC's newest pulls of one machine. */

@@ -146,10 +146,10 @@ export class LivePacks implements PackProvider {
     return buyPack({ id: purchaseId, priceUsdc: priceUsd, packType: code, maxPriceUsdc: 1_000, enabled: config.live, usdcMint: new PublicKey(config.USDC_MINT),
       client: this.client, connection: rpc, signer, paymentWallet: new PublicKey(config.COLLECTOR_CRYPT_PAYMENT_WALLET), store: this.purchases });
   }
-  sellBack(saleId: string, mint: string) {
+  sellBack(saleId: string, mint: string, memo?: string) {
     const { rpc, signer } = this.ops.require();
     if (!this.pool.address) throw new Error('The LEV_POOL wallet is not configured.');
-    return sellBack({ id: saleId, mint, client: this.client, connection: rpc, signer, recipient: new PublicKey(this.pool.address), usdcMint: new PublicKey(config.USDC_MINT), store: this.sales });
+    return sellBack({ id: saleId, mint, memo, client: this.client, connection: rpc, signer, recipient: new PublicKey(this.pool.address), usdcMint: new PublicKey(config.USDC_MINT), store: this.sales });
   }
   status(memo: string) { return this.client.packStatus(memo); }
   recentPulls(code: string) { return this.client.recentPulls(code); }

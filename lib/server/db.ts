@@ -139,6 +139,12 @@ export async function migrate(db: Database) {
   await once(db, 'resume-legacy-sales', `UPDATE orders SET status = 'settling', error = NULL, updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
       data = data || '{"failures": 0, "retryAt": 0, "message": "Retrying."}'::jsonb
     WHERE status = 'review' AND data->>'reviewFrom' = 'settling' AND error = 'Collector Crypt sent a sale in an unsupported transaction format.'`);
+  // Sales that landed while the server looked them up by the wrong signature, so it took them for expired and
+  // stopped for review: the worker now finds them by CC's memo, records the sale and pays any floor.
+  await once(db, 'resume-landed-sales', `UPDATE orders SET status = 'settling', error = NULL, updated_at = (EXTRACT(EPOCH FROM now()) * 1000)::bigint,
+      data = data || '{"failures": 0, "retryAt": 0, "message": "Retrying."}'::jsonb
+    WHERE status = 'review' AND side = 'long' AND data->>'reviewFrom' = 'settling'
+      AND (error LIKE 'Collector Crypt will not buy this card back%' OR error LIKE 'Sale simulation failed%' OR error = 'Selling this card back failed 3 times.')`);
 }
 
 async function once(db: Database, id: string, sql: string) {
